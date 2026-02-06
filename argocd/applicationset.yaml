@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: applications
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/dohr-michael/homelab-infra.git
+        revision: main
+        directories:
+          - path: applications/*
+  template:
+    metadata:
+      name: "{{ .path.basename }}"
+    spec:
+      project: homelab
+      source:
+        repoURL: https://github.com/dohr-michael/homelab-infra.git
+        targetRevision: main
+        path: "{{ .path.path }}"
+        plugin:
+          name: kustomize-sops
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{ .path.basename }}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

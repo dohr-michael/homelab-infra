@@ -1,0 +1,157 @@
+##############################################################################
+# stable-diffusion.cpp (Vulkan) — Génération d'images
+#
+# Image : à builder localement avec docker/Dockerfile.sd-cpp
+#         ou utiliser un registry privé
+#
+# Backend : Vulkan (RADV Mesa driver)
+# Modèles suggérés :
+#   - SDXL Turbo (~6.5 Go) : rapide, 1-4 steps
+#   - Flux.1-schnell GGUF (~5-12 Go selon quant) : meilleure qualité
+#   - Z-Image-Turbo : testé et validé sur Strix Halo
+#
+# API compatible AUTOMATIC1111 sur le port 7860
+##############################################################################
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sd-server-config
+  namespace: ai-stack
+data:
+  # Ajuster selon le modèle téléchargé dans /srv/ai-models/diffusion/
+  SD_MODEL: "sd_xl_turbo_1.0_fp16.safetensors"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sd-server
+  namespace: ai-stack
+  labels:
+    app: sd-server
+    component: image-gen
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sd-server
+  template:
+    metadata:
+      labels:
+        app: sd-server
+        component: image-gen
+    spec:
+      # ── Scheduling sur le noeud Strix Halo ────────────────
+      tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "ai"
+          effect: "NoSchedule"
+      nodeSelector:
+        gpu-type: "strix-halo"
+
+      imagePullSecrets:
+        - name: ghcr-credentials
+
+      # ── Conteneur principal ────────────────────────────────
+      containers:
+        - name: sd-server
+          # ⚠️ Remplacer par votre registry ou image locale
+          # Build: docker build -t sd-cpp-vulkan:latest -f docker/Dockerfile.sd-cpp .
+          # Tag:   docker tag sd-cpp-vulkan:latest <your-registry>/sd-cpp-vulkan:latest
+          # Push:  docker push <your-registry>/sd-cpp-vulkan:latest
+          image: ghcr.io/dohr-michael/homelab-infra/sd-cpp-vulkan:latest
+          imagePullPolicy: Always
+
+          args:
+            - "--listen"
+            - "--port"
+            - "7860"
+            - "--sd-path"
+            - "/app/sd.cpp-webui/sd"
+
+          ports:
+            - name: http
+              containerPort: 7860
+              protocol: TCP
+
+          # ── Accès GPU Vulkan ───────────────────────────────
+          volumeMounts:
+            - name: dri
+              mountPath: /dev/dri
+            - name: models
+              mountPath: /models
+              readOnly: true
+            - name: output
+              mountPath: /app/sd.cpp-webui/outputs
+
+          # ── Santé ──────────────────────────────────────────
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 18
+            timeoutSeconds: 5
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "4"
+              memory: "12Gi"
+
+          securityContext:
+            privileged: false
+            runAsUser: 0
+
+      # ── Volumes ──────────────────────────────────────────
+      volumes:
+        - name: dri
+          hostPath:
+            path: /dev/dri
+            type: Directory
+        - name: models
+          persistentVolumeClaim:
+            claimName: ai-models-diffusion-pvc
+        - name: output
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sd-server
+  namespace: ai-stack
+  labels:
+    app: sd-server
+spec:
+  type: ClusterIP
+  selector:
+    app: sd-server
+  ports:
+    - name: http
+      port: 7860
+      targetPort: http
+      protocol: TCP

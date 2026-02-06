@@ -1,0 +1,95 @@
+##############################################################################
+# Stockage persistant pour les modèles LLM et Image Gen
+# Les modèles sont stockés sur le noeud Strix Halo dans /srv/ai-models/
+#
+# Structure attendue sur le noeud :
+#   /srv/ai-models/
+#   ├── llm/          # Modèles GGUF pour llama.cpp
+#   └── diffusion/    # Modèles pour stable-diffusion.cpp
+##############################################################################
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ai-models-llm-pv
+  labels:
+    type: local
+    app: llama-server
+spec:
+  capacity:
+    storage: 200Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-ai
+  local:
+    path: /srv/ai-models/llm
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: gpu-type
+              operator: In
+              values:
+                - strix-halo
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ai-models-llm-pvc
+  namespace: ai-stack
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-ai
+  resources:
+    requests:
+      storage: 200Gi
+  selector:
+    matchLabels:
+      app: llama-server
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ai-models-diffusion-pv
+  labels:
+    type: local
+    app: sd-server
+spec:
+  capacity:
+    storage: 50Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-ai
+  local:
+    path: /srv/ai-models/diffusion
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: gpu-type
+              operator: In
+              values:
+                - strix-halo
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ai-models-diffusion-pvc
+  namespace: ai-stack
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-ai
+  resources:
+    requests:
+      storage: 50Gi
+  selector:
+    matchLabels:
+      app: sd-server

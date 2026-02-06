@@ -1,0 +1,22 @@
+# ConfigMap pour le plugin CMP (Config Management Plugin) SOPS
+# Le sidecar utilise ce fichier pour savoir comment générer les manifestes
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cmp-sops
+  namespace: argocd
+data:
+  plugin.yaml: |
+    apiVersion: argoproj.io/v1alpha1
+    kind: ConfigManagementPlugin
+    metadata:
+      name: kustomize-sops
+    spec:
+      generate:
+        command: ["sh", "-c"]
+        args:
+          - |
+            kustomize build . --enable-alpha-plugins --enable-exec
+      discover:
+        find:
+          glob: "**/ksops-generator.yaml"

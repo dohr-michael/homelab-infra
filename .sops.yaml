@@ -1,0 +1,5 @@
+creation_rules:
+  # Chiffre uniquement les valeurs "data" et "stringData" des Secrets K8s
+  - path_regex: .*\.secret\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    age: age13945fxf9dmg0sgmy9hteh5tuvlpz90hx3dqx63plf63f4zwhg9ysth6d98

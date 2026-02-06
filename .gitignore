@@ -1,0 +1,4 @@
+# Clés privées age — JAMAIS dans git
+age-key.txt
+*.age-key
+keys.txt

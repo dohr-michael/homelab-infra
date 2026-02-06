@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: homelab
+  namespace: argocd
+spec:
+  description: Homelab infrastructure
+
+  # Repos autorisés (tous les repos de dohr-michael)
+  sourceRepos:
+    - https://github.com/dohr-michael/*
+
+  # Namespaces de destination autorisés
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: "*"
+
+  # Ressources cluster-scoped autorisées (PV, Namespace, etc.)
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: ""
+      kind: PersistentVolume
+
+  # Toutes les ressources namespace-scoped autorisées
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

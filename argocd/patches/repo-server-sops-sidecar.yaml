@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: argocd-repo-server
+spec:
+  template:
+    spec:
+      volumes:
+        # Volume pour la clé age (secret créé par bootstrap.sh)
+        - name: sops-age
+          secret:
+            secretName: sops-age
+            optional: true
+        # Volume pour la config du plugin CMP
+        - name: cmp-sops
+          configMap:
+            name: cmp-sops
+        # Volume tmp pour le sidecar
+        - name: cmp-tmp
+          emptyDir: {}
+
+      containers:
+        # Sidecar CMP pour kustomize + sops
+        - name: cmp-sops
+          image: docker.io/viaductoss/ksops:v4.3.3
+          command: ["/var/run/argocd/argocd-cmp-server"]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+          env:
+            - name: SOPS_AGE_KEY_FILE
+              value: /sops-age/keys.txt
+            - name: XDG_CONFIG_HOME
+              value: /.config
+            - name: KUSTOMIZE_PLUGIN_HOME
+              value: /.config/kustomize/plugin
+          volumeMounts:
+            - name: var-files
+              mountPath: /var/run/argocd
+            - name: plugins
+              mountPath: /home/argocd/cmp-server/plugins
+            - name: cmp-sops
+              mountPath: /home/argocd/cmp-server/config/plugin.yaml
+              subPath: plugin.yaml
+            - name: cmp-tmp
+              mountPath: /tmp
+            - name: sops-age
+              mountPath: /sops-age
+              readOnly: true

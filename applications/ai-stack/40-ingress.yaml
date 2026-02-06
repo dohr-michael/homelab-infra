@@ -1,0 +1,57 @@
+##############################################################################
+# Ingress — Accès externe (optionnel)
+#
+# Ajuster les hostnames selon votre DNS/configuration
+# Compatible avec Traefik (défaut K3S) et nginx-ingress
+##############################################################################
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-stack-ingress
+  namespace: ai-stack
+  annotations:
+    # ── Pour Traefik (défaut K3S) ────────────────────────────
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    # ── Pour nginx-ingress (décommenter si utilisé) ──────────
+    # nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    # nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    # nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+spec:
+  rules:
+    # ── Open WebUI ───────────────────────────────────────────
+    - host: ai.home.dohrm.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: open-webui
+                port:
+                  number: 3000
+
+    # ── API LLM directe (optionnel) ─────────────────────────
+    - host: llm-api.home.dohrm.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: llama-server
+                port:
+                  number: 8080
+
+    # ── API Image Gen directe (optionnel) ────────────────────
+    - host: sd-api.home.dohrm.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sd-server
+                port:
+                  number: 7860

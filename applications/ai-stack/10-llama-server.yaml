@@ -1,0 +1,178 @@
+##############################################################################
+# llama-server (Vulkan) — Qwen3-30B-A3B-Instruct
+#
+# Image : kyuz0/amd-strix-halo-toolboxes:vulkan-radv
+# Backend : Vulkan (RADV Mesa driver)
+# Modèle : Qwen3-30B-A3B-Instruct (MoE, 3B params actifs)
+#           → Génération rapide (~50 tok/s tg), qualité 30B
+#           → ~17 Go en BF16, ~10 Go en Q4_K_M
+#
+# API compatible OpenAI sur le port 8080
+##############################################################################
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llama-server-config
+  namespace: ai-stack
+data:
+  # ── Modèle ──────────────────────────────────────────────────
+  # Ajuster selon le modèle téléchargé
+  MODEL_PATH: "/models/Qwen3-30B-A3B-Instruct-Q4_K_M.gguf"
+
+  # ── Paramètres serveur ──────────────────────────────────────
+  HOST: "0.0.0.0"
+  PORT: "8080"
+
+  # ── Paramètres inférence ────────────────────────────────────
+  # -ngl 999 : offload tous les layers sur GPU
+  # -fa      : flash attention (OBLIGATOIRE sur Strix Halo)
+  # -c       : taille du contexte
+  # -np      : nombre de slots parallèles
+  # --no-mmap: évite les crashs mmap sur gfx1151
+  N_GPU_LAYERS: "999"
+  CTX_SIZE: "8192"
+  PARALLEL_SLOTS: "2"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llama-server
+  namespace: ai-stack
+  labels:
+    app: llama-server
+    component: llm
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate           # GPU partagé, pas de rolling update
+  selector:
+    matchLabels:
+      app: llama-server
+  template:
+    metadata:
+      labels:
+        app: llama-server
+        component: llm
+    spec:
+      # ── Scheduling sur le noeud Strix Halo ────────────────
+      tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "ai"
+          effect: "NoSchedule"
+      nodeSelector:
+        gpu-type: "strix-halo"
+
+      # ── Conteneur principal ────────────────────────────────
+      containers:
+        - name: llama-server
+          image: docker.io/kyuz0/amd-strix-halo-toolboxes:vulkan-radv
+          imagePullPolicy: IfNotPresent
+
+          command: ["llama-server"]
+          args:
+            - "-m"
+            - "$(MODEL_PATH)"
+            - "--host"
+            - "$(HOST)"
+            - "--port"
+            - "$(PORT)"
+            - "-ngl"
+            - "$(N_GPU_LAYERS)"
+            - "-fa"
+            - "-c"
+            - "$(CTX_SIZE)"
+            - "-np"
+            - "$(PARALLEL_SLOTS)"
+            - "--no-mmap"
+
+          envFrom:
+            - configMapRef:
+                name: llama-server-config
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          # ── Accès GPU Vulkan ───────────────────────────────
+          # /dev/dri contient les devices renderD128, card0, etc.
+          volumeMounts:
+            - name: dri
+              mountPath: /dev/dri
+            - name: models
+              mountPath: /models
+              readOnly: true
+
+          # ── Santé ──────────────────────────────────────────
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 30     # Jusqu'à 5 min pour charger le modèle
+            timeoutSeconds: 5
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # ── Ressources ─────────────────────────────────────
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              cpu: "8"
+              memory: "16Gi"
+
+          # ── Sécurité ───────────────────────────────────────
+          securityContext:
+            privileged: false
+            runAsUser: 0
+            capabilities:
+              add:
+                - SYS_PTRACE        # Utile pour le debug GPU
+
+      # ── Volumes ──────────────────────────────────────────
+      volumes:
+        - name: dri
+          hostPath:
+            path: /dev/dri
+            type: Directory
+        - name: models
+          persistentVolumeClaim:
+            claimName: ai-models-llm-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llama-server
+  namespace: ai-stack
+  labels:
+    app: llama-server
+spec:
+  type: ClusterIP
+  selector:
+    app: llama-server
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
