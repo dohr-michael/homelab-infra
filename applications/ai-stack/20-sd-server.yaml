@@ -57,6 +57,29 @@ spec:
       imagePullSecrets:
         - name: ghcr-credentials
 
+      # ── Validation des modèles ──────────────────────────────
+      initContainers:
+        - name: check-model
+          image: busybox:1.37
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "Checking model file: /models/$(SD_MODEL)"
+              if [ ! -f "/models/$(SD_MODEL)" ]; then
+                echo "ERROR: Model file not found: /models/$(SD_MODEL)"
+                echo "Available files in /models:"
+                ls -lh /models/ 2>/dev/null || echo "  (directory empty or missing)"
+                exit 1
+              fi
+              echo "OK: Model file found ($(du -h "/models/$(SD_MODEL)" | cut -f1))"
+          envFrom:
+            - configMapRef:
+                name: sd-server-config
+          volumeMounts:
+            - name: models
+              mountPath: /models
+              readOnly: true
+
       # ── Conteneur principal ────────────────────────────────
       containers:
         - name: sd-server
