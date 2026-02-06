@@ -8,14 +8,15 @@
 # Compatible avec Open WebUI pour la génération d'images
 ##############################################################################
 
-FROM fedora:43 AS builder
+FROM fedora:42 AS builder
 
 # Dépendances de build
 RUN dnf install -y \
     git cmake gcc-c++ make \
-    vulkan-loader vulkan-headers vulkan-tools \
+    vulkan-loader vulkan-loader-devel vulkan-headers vulkan-tools \
     mesa-vulkan-drivers mesa-dri-drivers \
     glslc glslang \
+    python3 python3-pip python3-wheel \
     && dnf clean all
 
 # Build stable-diffusion.cpp avec Vulkan
@@ -29,20 +30,7 @@ RUN git clone --recursive https://github.com/leejet/stable-diffusion.cpp.git sd.
     && cmake .. -DSD_VULKAN=ON -DCMAKE_BUILD_TYPE=Release \
     && cmake --build . --config Release -j$(nproc)
 
-# ── Runtime stage ────────────────────────────────────────────
-FROM fedora:43
-
-RUN dnf install -y \
-    vulkan-loader mesa-vulkan-drivers mesa-dri-drivers \
-    python3 python3-pip python3-wheel \
-    git \
-    && dnf clean all
-
-# Copier le binaire sd depuis le builder
-COPY --from=builder /build/sd.cpp/build/bin/sd /usr/local/bin/sd
-COPY --from=builder /build/sd.cpp/build/bin/sd-cli /usr/local/bin/sd-cli
-
-# Installer sd.cpp-webui (API compatible AUTOMATIC1111)
+# Build sd.cpp-webui venv
 WORKDIR /app
 RUN git clone https://github.com/daniandtheweb/sd.cpp-webui.git \
     && cd sd.cpp-webui \
@@ -50,8 +38,23 @@ RUN git clone https://github.com/daniandtheweb/sd.cpp-webui.git \
     && ./venv/bin/pip install --upgrade pip \
     && ./venv/bin/pip install -r requirements.txt
 
-# Copier le binaire dans le webui
-RUN cp /usr/local/bin/sd /app/sd.cpp-webui/
+# ── Runtime stage ────────────────────────────────────────────
+FROM fedora:42
+
+RUN dnf install -y \
+    vulkan-loader mesa-vulkan-drivers mesa-dri-drivers \
+    python3 \
+    && dnf clean all
+
+# Copier les binaires depuis le builder
+COPY --from=builder /build/sd.cpp/build/bin/sd-cli /usr/local/bin/sd-cli
+COPY --from=builder /build/sd.cpp/build/bin/sd-server /usr/local/bin/sd-server
+
+# Copier le webui et son venv depuis le builder
+COPY --from=builder /app/sd.cpp-webui /app/sd.cpp-webui
+
+# Copier le binaire dans le webui (le webui attend un binaire nommé "sd")
+RUN cp /usr/local/bin/sd-cli /app/sd.cpp-webui/sd
 
 WORKDIR /app/sd.cpp-webui
 
