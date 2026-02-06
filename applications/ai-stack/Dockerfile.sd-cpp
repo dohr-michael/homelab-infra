@@ -22,7 +22,7 @@ RUN dnf install -y \
 WORKDIR /build
 RUN git clone --recursive https://github.com/leejet/stable-diffusion.cpp.git sd.cpp \
     && cd sd.cpp \
-    && git checkout master-493-65891d7 \
+    && git checkout 65891d7 \
     && git submodule update --init --recursive \
     && mkdir build && cd build \
     && cmake .. -DSD_VULKAN=ON -DCMAKE_BUILD_TYPE=Release \
