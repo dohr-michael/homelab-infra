@@ -106,12 +106,17 @@ spec:
             - "-ngl"
             - "$(N_GPU_LAYERS)"
             - "-fa"
+            - "on"
             - "-c"
             - "$(CTX_SIZE)"
             - "-np"
             - "$(PARALLEL_SLOTS)"
             - "--no-mmap"
 
+          env:
+            # Forcer RADV (AMD) — l'image contient tous les drivers Mesa
+            - name: VK_DRIVER_FILES
+              value: "/usr/share/vulkan/icd.d/radeon_icd.x86_64.json"
           envFrom:
             - configMapRef:
                 name: llama-server-config

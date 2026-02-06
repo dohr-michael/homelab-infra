@@ -62,5 +62,5 @@ EXPOSE 7860
 
 # Par défaut, lance le webui avec l'API activée
 # Le modèle est monté via un volume dans /models
-ENTRYPOINT ["./venv/bin/python", "main.py"]
-CMD ["--listen", "--port", "7860", "--sd-path", "/app/sd.cpp-webui/sd"]
+ENTRYPOINT ["./venv/bin/python", "sdcpp_webui.py"]
+CMD ["--listen"]
