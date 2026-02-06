@@ -13,7 +13,7 @@ metadata:
   namespace: ai-stack
   annotations:
     # ── Pour Traefik (défaut K3S) ────────────────────────────
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.entrypoints: web
     # ── Pour nginx-ingress (décommenter si utilisé) ──────────
     # nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
     # nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
@@ -30,7 +30,7 @@ spec:
               service:
                 name: open-webui
                 port:
-                  number: 3000
+                  number: 8080
 
     # ── API LLM directe (optionnel) ─────────────────────────
     - host: llm-api.home.dohrm.fr

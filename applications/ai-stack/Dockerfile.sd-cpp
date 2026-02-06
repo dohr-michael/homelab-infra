@@ -22,6 +22,8 @@ RUN dnf install -y \
 WORKDIR /build
 RUN git clone --recursive https://github.com/leejet/stable-diffusion.cpp.git sd.cpp \
     && cd sd.cpp \
+    && git checkout master-493-65891d7 \
+    && git submodule update --init --recursive \
     && mkdir build && cd build \
     && cmake .. -DSD_VULKAN=ON -DCMAKE_BUILD_TYPE=Release \
     && cmake --build . --config Release -j$(nproc)
@@ -41,8 +43,9 @@ COPY --from=builder /build/sd.cpp/build/bin/sd-cli /usr/local/bin/sd-cli
 
 # Installer sd.cpp-webui (API compatible AUTOMATIC1111)
 WORKDIR /app
-RUN git clone https://github.com/leejet/sd.cpp-webui.git \
+RUN git clone https://github.com/daniandtheweb/sd.cpp-webui.git \
     && cd sd.cpp-webui \
+    && git checkout c74a476 \
     && python3 -m venv venv \
     && ./venv/bin/pip install --upgrade pip \
     && ./venv/bin/pip install -r requirements.txt

@@ -66,6 +66,29 @@ spec:
       nodeSelector:
         gpu-type: "strix-halo"
 
+      # ── Validation des modèles ──────────────────────────────
+      initContainers:
+        - name: check-model
+          image: busybox:1.37
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "Checking model file: $(MODEL_PATH)"
+              if [ ! -f "$(MODEL_PATH)" ]; then
+                echo "ERROR: Model file not found: $(MODEL_PATH)"
+                echo "Available files in /models:"
+                ls -lh /models/ 2>/dev/null || echo "  (directory empty or missing)"
+                exit 1
+              fi
+              echo "OK: Model file found ($(du -h "$(MODEL_PATH)" | cut -f1))"
+          envFrom:
+            - configMapRef:
+                name: llama-server-config
+          volumeMounts:
+            - name: models
+              mountPath: /models
+              readOnly: true
+
       # ── Conteneur principal ────────────────────────────────
       containers:
         - name: llama-server
