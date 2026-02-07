@@ -43,6 +43,14 @@ spec:
         app: open-webui
         component: frontend
     spec:
+      # ── Scheduling sur le noeud Strix Halo ────────────────
+      tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "ai"
+          effect: "NoSchedule"
+      nodeSelector:
+        gpu-type: "strix-halo"
       containers:
         - name: open-webui
           image: ghcr.io/open-webui/open-webui:main
