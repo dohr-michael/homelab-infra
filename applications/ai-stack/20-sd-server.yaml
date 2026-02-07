@@ -1,27 +1,14 @@
 ##############################################################################
-# stable-diffusion.cpp (Vulkan) — Génération d'images
+# ComfyUI (ROCm) — Génération d'images
 #
-# Image : à builder localement avec docker/Dockerfile.sd-cpp
-#         ou utiliser un registry privé
-#
-# Backend : Vulkan (RADV Mesa driver)
+# Image : kyuz0/amd-strix-halo-comfyui:latest
+# Backend : ROCm 7 (AMD native GPU compute)
 # Modèles suggérés :
 #   - SDXL Turbo (~6.5 Go) : rapide, 1-4 steps
-#   - Flux.1-schnell GGUF (~5-12 Go selon quant) : meilleure qualité
-#   - Z-Image-Turbo : testé et validé sur Strix Halo
+#   - HunyuanVideo 1.5, Qwen Image, Wan 2.2
 #
-# API compatible AUTOMATIC1111 sur le port 7860
+# Interface ComfyUI sur le port 8000
 ##############################################################################
-
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: sd-server-config
-  namespace: ai-stack
-data:
-  # Ajuster selon le modèle téléchargé dans /srv/ai-models/diffusion/
-  SD_MODEL: "sd_xl_turbo_1.0_fp16.safetensors"
 
 ---
 apiVersion: apps/v1
@@ -54,57 +41,42 @@ spec:
       nodeSelector:
         gpu-type: "strix-halo"
 
-      imagePullSecrets:
-        - name: ghcr-credentials
-
-      # ── Validation des modèles ──────────────────────────────
-      initContainers:
-        - name: check-model
-          image: busybox:1.37
-          command: ["sh", "-c"]
-          args:
-            - |
-              echo "Checking model file: /checkpoints/$(SD_MODEL)"
-              if [ ! -f "/checkpoints/$(SD_MODEL)" ]; then
-                echo "ERROR: Model file not found: /checkpoints/$(SD_MODEL)"
-                echo "Available files in /checkpoints:"
-                ls -lh /checkpoints/ 2>/dev/null || echo "  (directory empty or missing)"
-                exit 1
-              fi
-              echo "OK: Model file found ($(du -h "/checkpoints/$(SD_MODEL)" | cut -f1))"
-          envFrom:
-            - configMapRef:
-                name: sd-server-config
-          volumeMounts:
-            - name: models
-              mountPath: /checkpoints
-              readOnly: true
-
       # ── Conteneur principal ────────────────────────────────
       containers:
-        - name: sd-server
-          # ⚠️ Remplacer par votre registry ou image locale
-          # Build: docker build -t sd-cpp-vulkan:latest -f docker/Dockerfile.sd-cpp .
-          # Tag:   docker tag sd-cpp-vulkan:latest <your-registry>/sd-cpp-vulkan:latest
-          # Push:  docker push <your-registry>/sd-cpp-vulkan:latest
-          image: ghcr.io/dohr-michael/homelab-infra/sd-cpp-vulkan:latest
-          imagePullPolicy: Always
+        - name: comfyui
+          image: docker.io/kyuz0/amd-strix-halo-comfyui:latest
+          imagePullPolicy: IfNotPresent
 
-          # args définis par ENTRYPOINT/CMD du Dockerfile : sdcpp_webui.py --listen
+          workingDir: /opt/ComfyUI
+          command: ["python", "main.py"]
+          args:
+            - "--listen"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
+            - "--output-directory"
+            - "/outputs"
+            - "--disable-mmap"
+            - "--cache-none"
+            - "--bf16-vae"
+
           ports:
             - name: http
-              containerPort: 7860
+              containerPort: 8000
               protocol: TCP
 
-          # ── Accès GPU Vulkan ───────────────────────────────
+          # ── Accès GPU ROCm ─────────────────────────────────
+          # /dev/dri + /dev/kfd requis par ROCm
           volumeMounts:
             - name: dri
               mountPath: /dev/dri
+            - name: kfd
+              mountPath: /dev/kfd
             - name: models
-              mountPath: /app/sd.cpp-webui/models/checkpoints
+              mountPath: /opt/ComfyUI/models/checkpoints
               readOnly: true
             - name: output
-              mountPath: /app/sd.cpp-webui/outputs
+              mountPath: /outputs
 
           # ── Santé ──────────────────────────────────────────
           startupProbe:
@@ -113,7 +85,7 @@ spec:
               port: http
             initialDelaySeconds: 15
             periodSeconds: 10
-            failureThreshold: 18
+            failureThreshold: 30
             timeoutSeconds: 5
 
           readinessProbe:
@@ -139,8 +111,10 @@ spec:
               cpu: "4"
               memory: "12Gi"
 
+          # ── Sécurité ───────────────────────────────────────
+          # privileged requis : SELinux bloque les allocations mémoire HSA de ROCm
           securityContext:
-            privileged: false
+            privileged: true
             runAsUser: 0
 
       # ── Volumes ──────────────────────────────────────────
@@ -149,6 +123,10 @@ spec:
           hostPath:
             path: /dev/dri
             type: Directory
+        - name: kfd
+          hostPath:
+            path: /dev/kfd
+            type: CharDevice
         - name: models
           persistentVolumeClaim:
             claimName: ai-models-diffusion-pvc
@@ -169,6 +147,6 @@ spec:
     app: sd-server
   ports:
     - name: http
-      port: 7860
+      port: 8000
       targetPort: http
       protocol: TCP

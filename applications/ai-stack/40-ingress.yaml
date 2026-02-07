@@ -44,7 +44,7 @@ spec:
                 port:
                   number: 8080
 
-    # ── API Image Gen directe (optionnel) ────────────────────
+    # ── ComfyUI (Image Gen) ────────────────────────────────
     - host: sd-api.home.dohrm.fr
       http:
         paths:
@@ -54,4 +54,4 @@ spec:
               service:
                 name: sd-server
                 port:
-                  number: 7860
+                  number: 8000
