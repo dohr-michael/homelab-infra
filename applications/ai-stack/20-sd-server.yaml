@@ -64,20 +64,20 @@ spec:
           command: ["sh", "-c"]
           args:
             - |
-              echo "Checking model file: /models/$(SD_MODEL)"
-              if [ ! -f "/models/$(SD_MODEL)" ]; then
-                echo "ERROR: Model file not found: /models/$(SD_MODEL)"
-                echo "Available files in /models:"
-                ls -lh /models/ 2>/dev/null || echo "  (directory empty or missing)"
+              echo "Checking model file: /checkpoints/$(SD_MODEL)"
+              if [ ! -f "/checkpoints/$(SD_MODEL)" ]; then
+                echo "ERROR: Model file not found: /checkpoints/$(SD_MODEL)"
+                echo "Available files in /checkpoints:"
+                ls -lh /checkpoints/ 2>/dev/null || echo "  (directory empty or missing)"
                 exit 1
               fi
-              echo "OK: Model file found ($(du -h "/models/$(SD_MODEL)" | cut -f1))"
+              echo "OK: Model file found ($(du -h "/checkpoints/$(SD_MODEL)" | cut -f1))"
           envFrom:
             - configMapRef:
                 name: sd-server-config
           volumeMounts:
             - name: models
-              mountPath: /models
+              mountPath: /checkpoints
               readOnly: true
 
       # ── Conteneur principal ────────────────────────────────
@@ -101,7 +101,7 @@ spec:
             - name: dri
               mountPath: /dev/dri
             - name: models
-              mountPath: /models
+              mountPath: /app/sd.cpp-webui/models/checkpoints
               readOnly: true
             - name: output
               mountPath: /app/sd.cpp-webui/outputs
