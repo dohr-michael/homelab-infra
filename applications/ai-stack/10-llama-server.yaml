@@ -106,12 +106,14 @@ spec:
             - "-ngl"
             - "$(N_GPU_LAYERS)"
             - "-fa"
-            - "on"
+            - "1"
             - "-c"
             - "$(CTX_SIZE)"
             - "-np"
             - "$(PARALLEL_SLOTS)"
             - "--no-mmap"
+            - "-fit"
+            - "off"
 
           envFrom:
             - configMapRef:
@@ -168,12 +170,10 @@ spec:
               memory: "16Gi"
 
           # ── Sécurité ───────────────────────────────────────
+          # privileged requis : SELinux bloque les allocations mémoire HSA de ROCm
           securityContext:
-            privileged: false
+            privileged: true
             runAsUser: 0
-            capabilities:
-              add:
-                - SYS_PTRACE        # Utile pour le debug GPU
 
       # ── Volumes ──────────────────────────────────────────
       volumes:
