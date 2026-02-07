@@ -1,8 +1,8 @@
 ##############################################################################
-# llama-server (Vulkan) — Qwen3-30B-A3B-Instruct
+# llama-server (ROCm) — Qwen3-30B-A3B
 #
-# Image : kyuz0/amd-strix-halo-toolboxes:vulkan-radv
-# Backend : Vulkan (RADV Mesa driver)
+# Image : kyuz0/amd-strix-halo-toolboxes:rocm-6.4.4
+# Backend : ROCm 6.4.4 (AMD native GPU compute)
 # Modèle : Qwen3-30B-A3B-Instruct (MoE, 3B params actifs)
 #           → Génération rapide (~50 tok/s tg), qualité 30B
 #           → ~17 Go en BF16, ~10 Go en Q4_K_M
@@ -92,7 +92,7 @@ spec:
       # ── Conteneur principal ────────────────────────────────
       containers:
         - name: llama-server
-          image: docker.io/kyuz0/amd-strix-halo-toolboxes:vulkan-radv
+          image: docker.io/kyuz0/amd-strix-halo-toolboxes:rocm-6.4.4
           imagePullPolicy: IfNotPresent
 
           command: ["llama-server"]
@@ -113,10 +113,6 @@ spec:
             - "$(PARALLEL_SLOTS)"
             - "--no-mmap"
 
-          env:
-            # Forcer RADV (AMD) — l'image contient tous les drivers Mesa
-            - name: VK_DRIVER_FILES
-              value: "/usr/share/vulkan/icd.d/radeon_icd.x86_64.json"
           envFrom:
             - configMapRef:
                 name: llama-server-config
@@ -126,11 +122,13 @@ spec:
               containerPort: 8080
               protocol: TCP
 
-          # ── Accès GPU Vulkan ───────────────────────────────
-          # /dev/dri contient les devices renderD128, card0, etc.
+          # ── Accès GPU ROCm ─────────────────────────────────
+          # /dev/dri + /dev/kfd requis par ROCm
           volumeMounts:
             - name: dri
               mountPath: /dev/dri
+            - name: kfd
+              mountPath: /dev/kfd
             - name: models
               mountPath: /models
               readOnly: true
@@ -183,6 +181,10 @@ spec:
           hostPath:
             path: /dev/dri
             type: Directory
+        - name: kfd
+          hostPath:
+            path: /dev/kfd
+            type: CharDevice
         - name: models
           persistentVolumeClaim:
             claimName: ai-models-llm-pvc
