@@ -9,7 +9,7 @@ resources:
   - cmp-sops.yaml
   - applicationset.yaml
   - project.yaml
-  - repo-credentials.secret.yaml
+  - repo-ssh.secret.yaml
 
 patches:
   # Active le mode insecure (TLS terminé par Caddy)

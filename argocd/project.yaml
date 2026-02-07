@@ -6,25 +6,13 @@ metadata:
 spec:
   description: Homelab infrastructure
 
-  # Repos autorisés (tous les repos de dohr-michael)
   sourceRepos:
-    - https://github.com/dohr-michael/*
+    - "*"
 
-  # Namespaces de destination autorisés
   destinations:
-    - server: https://kubernetes.default.svc
-      namespace: "*"
+    - namespace: "*"
+      server: "*"
 
-  # Ressources cluster-scoped autorisées (PV, Namespace, etc.)
   clusterResourceWhitelist:
-    - group: ""
-      kind: Namespace
-    - group: ""
-      kind: PersistentVolume
-    - group: storage.k8s.io
-      kind: StorageClass
-
-  # Toutes les ressources namespace-scoped autorisées
-  namespaceResourceWhitelist:
     - group: "*"
       kind: "*"

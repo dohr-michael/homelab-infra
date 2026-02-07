@@ -8,7 +8,7 @@ spec:
   goTemplateOptions: ["missingkey=error"]
   generators:
     - git:
-        repoURL: https://github.com/dohr-michael/homelab-infra.git
+        repoURL: git@github.com:dohr-michael/homelab-infra.git
         revision: main
         directories:
           - path: applications/*
@@ -18,7 +18,7 @@ spec:
     spec:
       project: homelab
       source:
-        repoURL: https://github.com/dohr-michael/homelab-infra.git
+        repoURL: git@github.com:dohr-michael/homelab-infra.git
         targetRevision: main
         path: "{{ .path.path }}"
         plugin:
