@@ -1,0 +1,83 @@
+##############################################################################
+# Headscale DNS sync
+#
+# Copie les records DNS depuis un ConfigMap vers /etc/headscale/dns.json
+# sur le node vps-a7c3e9b8 (Headscale server).
+#
+# ArgoCD met à jour le ConfigMap à chaque push, le CronJob copie
+# le fichier toutes les minutes.
+##############################################################################
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: headscale-dns
+  namespace: headscale
+data:
+  dns.json: |
+    [
+      {
+        "name": "argo.home.dohrm.fr",
+        "type": "A",
+        "value": "100.64.0.1"
+      },
+      {
+        "name": "ai.home.dohrm.fr",
+        "type": "A",
+        "value": "100.64.0.1"
+      },
+      {
+        "name": "llm-api.home.dohrm.fr",
+        "type": "A",
+        "value": "100.64.0.1"
+      },
+      {
+        "name": "sd-api.home.dohrm.fr",
+        "type": "A",
+        "value": "100.64.0.1"
+      }
+    ]
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: headscale-dns-sync
+  namespace: headscale
+spec:
+  schedule: "* * * * *"
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Replace
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          nodeSelector:
+            kubernetes.io/hostname: "vps-a7c3e9b8"
+          tolerations:
+            - operator: Exists
+          restartPolicy: OnFailure
+          containers:
+            - name: sync
+              image: busybox:1.37
+              command: ["sh", "-c"]
+              args:
+                - |
+                  cp /config/dns.json /host-etc-headscale/dns.json
+                  echo "DNS records synced to /etc/headscale/dns.json"
+              volumeMounts:
+                - name: config
+                  mountPath: /config
+                  readOnly: true
+                - name: host-etc-headscale
+                  mountPath: /host-etc-headscale
+          volumes:
+            - name: config
+              configMap:
+                name: headscale-dns
+            - name: host-etc-headscale
+              hostPath:
+                path: /etc/headscale
+                type: Directory
