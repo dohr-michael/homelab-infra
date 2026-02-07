@@ -1,0 +1,22 @@
+[
+  {
+    "name": "argo.home.dohrm.fr",
+    "type": "A",
+    "value": "100.64.0.1"
+  },
+  {
+    "name": "ai.home.dohrm.fr",
+    "type": "A",
+    "value": "100.64.0.1"
+  },
+  {
+    "name": "llm-api.home.dohrm.fr",
+    "type": "A",
+    "value": "100.64.0.1"
+  },
+  {
+    "name": "sd-api.home.dohrm.fr",
+    "type": "A",
+    "value": "100.64.0.1"
+  }
+]
