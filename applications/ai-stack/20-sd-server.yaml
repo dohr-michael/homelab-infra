@@ -90,13 +90,7 @@ spec:
           image: ghcr.io/dohr-michael/homelab-infra/sd-cpp-vulkan:latest
           imagePullPolicy: Always
 
-          args:
-            - "--listen"
-            - "--port"
-            - "7860"
-            - "--sd-path"
-            - "/app/sd.cpp-webui/sd"
-
+          # args définis par ENTRYPOINT/CMD du Dockerfile : sdcpp_webui.py --listen
           ports:
             - name: http
               containerPort: 7860
