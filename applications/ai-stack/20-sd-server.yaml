@@ -106,10 +106,10 @@ spec:
           resources:
             requests:
               cpu: "1"
-              memory: "2Gi"
+              memory: "4Gi"
             limits:
               cpu: "4"
-              memory: "12Gi"
+              memory: "24Gi"
 
           # ── Sécurité ───────────────────────────────────────
           # privileged requis : SELinux bloque les allocations mémoire HSA de ROCm
