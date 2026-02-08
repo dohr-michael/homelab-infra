@@ -1,13 +1,97 @@
 ##############################################################################
-# LobeChat — Interface chat LLM
+# LibreChat — Interface chat LLM
 #
 # Se connecte à :
 #   - llama-server (port 8080) pour le chat LLM via API OpenAI
 #   - ComfyUI accessible directement via sd-api.home.dohrm.fr
 #
-# Mode client (sans base de données) — léger et simple
-# Port : 3210
+# Config : librechat.yaml via ConfigMap (GitOps-friendly)
+# Port : 3080
 ##############################################################################
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: librechat-config
+  namespace: ai-stack
+data:
+  librechat.yaml: |
+    version: 1.2.8
+    cache: true
+    endpoints:
+      custom:
+        - name: "Llama Server"
+          apiKey: "sk-no-key-required"
+          baseURL: "http://llama-server.ai-stack.svc.cluster.local:8080/v1"
+          models:
+            default: ["qwen3-30b-a3b"]
+            fetch: true
+          titleConvo: true
+          titleModel: "current_model"
+          summarize: false
+          modelDisplayLabel: "Qwen3"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb
+  namespace: ai-stack
+  labels:
+    app: mongodb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "ai"
+          effect: "NoSchedule"
+      nodeSelector:
+        gpu-type: "strix-halo"
+      containers:
+        - name: mongodb
+          image: mongo:7
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: data
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb
+  namespace: ai-stack
+  labels:
+    app: mongodb
+spec:
+  type: ClusterIP
+  selector:
+    app: mongodb
+  ports:
+    - port: 27017
+      targetPort: 27017
 
 ---
 apiVersion: apps/v1
@@ -29,7 +113,6 @@ spec:
         app: open-webui
         component: frontend
     spec:
-      # ── Scheduling sur le noeud Strix Halo ────────────────
       tolerations:
         - key: "dedicated"
           operator: "Equal"
@@ -39,34 +122,56 @@ spec:
         gpu-type: "strix-halo"
 
       containers:
-        - name: lobechat
-          image: lobehub/lobe-chat:latest
+        - name: librechat
+          image: ghcr.io/danny-avila/librechat:latest
           imagePullPolicy: IfNotPresent
 
           env:
-            # ── Connexion au LLM (llama-server, API OpenAI-compatible) ──
-            - name: OPENAI_API_KEY
-              value: "sk-no-key-required"
-            - name: OPENAI_PROXY_URL
-              value: "http://llama-server.ai-stack.svc.cluster.local:8080/v1"
-            - name: OPENAI_MODEL_LIST
-              value: "qwen3-30b-a3b"
-
-            # ── Désactiver Ollama ──
-            - name: ENABLED_OLLAMA
-              value: "0"
-
-            # ── Accès ──
-            - name: ACCESS_CODE
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "3080"
+            - name: MONGO_URI
+              value: "mongodb://mongodb.ai-stack.svc.cluster.local:27017/LibreChat"
+            - name: DOMAIN_CLIENT
+              value: "http://ai.home.dohrm.fr"
+            - name: DOMAIN_SERVER
+              value: "http://ai.home.dohrm.fr"
+            - name: ALLOW_REGISTRATION
+              value: "true"
+            - name: ALLOW_EMAIL_LOGIN
+              value: "true"
+            - name: CREDS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: open-webui-secrets
-                  key: WEBUI_SECRET_KEY
+                  name: librechat-secrets
+                  key: CREDS_KEY
+            - name: CREDS_IV
+              valueFrom:
+                secretKeyRef:
+                  name: librechat-secrets
+                  key: CREDS_IV
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: librechat-secrets
+                  key: JWT_SECRET
+            - name: JWT_REFRESH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: librechat-secrets
+                  key: JWT_REFRESH_SECRET
 
           ports:
             - name: http
-              containerPort: 3210
+              containerPort: 3080
               protocol: TCP
+
+          volumeMounts:
+            - name: config
+              mountPath: /app/librechat.yaml
+              subPath: librechat.yaml
+              readOnly: true
 
           startupProbe:
             httpGet:
@@ -92,10 +197,15 @@ spec:
           resources:
             requests:
               cpu: "100m"
-              memory: "512Mi"
+              memory: "256Mi"
             limits:
-              cpu: "2"
-              memory: "1Gi"
+              cpu: "1"
+              memory: "512Mi"
+
+      volumes:
+        - name: config
+          configMap:
+            name: librechat-config
 
 ---
 apiVersion: v1
@@ -111,6 +221,6 @@ spec:
     app: open-webui
   ports:
     - name: http
-      port: 3210
+      port: 3080
       targetPort: http
       protocol: TCP

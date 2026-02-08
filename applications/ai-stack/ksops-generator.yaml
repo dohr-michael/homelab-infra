@@ -10,3 +10,4 @@ metadata:
 files:
   - ghcr-credentials.secret.yaml
   - open-webui.secret.yaml
+  - librechat.secret.yaml
