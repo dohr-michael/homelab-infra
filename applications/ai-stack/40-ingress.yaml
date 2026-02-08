@@ -20,7 +20,7 @@ metadata:
     # nginx.ingress.kubernetes.io/proxy-body-size: "50m"
 spec:
   rules:
-    # ── LibreChat ───────────────────────────────────────────
+    # ── Open WebUI ───────────────────────────────────────────
     - host: ai.home.dohrm.fr
       http:
         paths:
@@ -30,7 +30,7 @@ spec:
               service:
                 name: open-webui
                 port:
-                  number: 3080
+                  number: 8080
 
     # ── API LLM directe (optionnel) ─────────────────────────
     - host: llm-api.home.dohrm.fr

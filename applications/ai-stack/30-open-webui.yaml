@@ -1,97 +1,27 @@
 ##############################################################################
-# LibreChat — Interface chat LLM
+# Open WebUI — Interface unifiée LLM + Image Gen
 #
 # Se connecte à :
 #   - llama-server (port 8080) pour le chat LLM via API OpenAI
-#   - ComfyUI accessible directement via sd-api.home.dohrm.fr
+#   - sd-server (port 8000) pour la génération d'images via ComfyUI
 #
-# Config : librechat.yaml via ConfigMap (GitOps-friendly)
-# Port : 3080
+# Open WebUI peut tourner sur N'IMPORTE QUEL noeud du cluster
+# (pas besoin de GPU)
 ##############################################################################
 
 ---
 apiVersion: v1
-kind: ConfigMap
+kind: PersistentVolumeClaim
 metadata:
-  name: librechat-config
+  name: open-webui-data-pvc
   namespace: ai-stack
-data:
-  librechat.yaml: |
-    version: 1.2.8
-    cache: true
-    endpoints:
-      custom:
-        - name: "Llama Server"
-          apiKey: "sk-no-key-required"
-          baseURL: "http://llama-server.ai-stack.svc.cluster.local:8080/v1"
-          models:
-            default: ["qwen3-30b-a3b"]
-            fetch: true
-          titleConvo: true
-          titleModel: "current_model"
-          summarize: false
-          modelDisplayLabel: "Qwen3"
-
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: mongodb
-  namespace: ai-stack
-  labels:
-    app: mongodb
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: mongodb
-  template:
-    metadata:
-      labels:
-        app: mongodb
-    spec:
-      tolerations:
-        - key: "dedicated"
-          operator: "Equal"
-          value: "ai"
-          effect: "NoSchedule"
-      nodeSelector:
-        gpu-type: "strix-halo"
-      containers:
-        - name: mongodb
-          image: mongo:7
-          imagePullPolicy: IfNotPresent
-          ports:
-            - containerPort: 27017
-          volumeMounts:
-            - name: data
-              mountPath: /data/db
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "128Mi"
-            limits:
-              cpu: "500m"
-              memory: "512Mi"
-      volumes:
-        - name: data
-          emptyDir: {}
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mongodb
-  namespace: ai-stack
-  labels:
-    app: mongodb
-spec:
-  type: ClusterIP
-  selector:
-    app: mongodb
-  ports:
-    - port: 27017
-      targetPort: 27017
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi
 
 ---
 apiVersion: apps/v1
@@ -113,6 +43,7 @@ spec:
         app: open-webui
         component: frontend
     spec:
+      # ── Scheduling sur le noeud Strix Halo ────────────────
       tolerations:
         - key: "dedicated"
           operator: "Equal"
@@ -120,65 +51,54 @@ spec:
           effect: "NoSchedule"
       nodeSelector:
         gpu-type: "strix-halo"
-
       containers:
-        - name: librechat
-          image: ghcr.io/danny-avila/librechat:latest
+        - name: open-webui
+          image: ghcr.io/open-webui/open-webui:main
           imagePullPolicy: IfNotPresent
 
           env:
-            - name: HOST
-              value: "0.0.0.0"
-            - name: PORT
-              value: "3080"
-            - name: MONGO_URI
-              value: "mongodb://mongodb.ai-stack.svc.cluster.local:27017/LibreChat"
-            - name: DOMAIN_CLIENT
-              value: "http://ai.home.dohrm.fr"
-            - name: DOMAIN_SERVER
-              value: "http://ai.home.dohrm.fr"
-            - name: ALLOW_REGISTRATION
+            # ── Connexion au LLM (llama-server, API OpenAI-compatible) ──
+            - name: OPENAI_API_BASE_URL
+              value: "http://llama-server.ai-stack.svc.cluster.local:8080/v1"
+            - name: OPENAI_API_KEY
+              value: "sk-no-key-required"
+
+            # ── Désactiver Ollama (on utilise llama-server directement) ──
+            - name: OLLAMA_BASE_URL
+              value: ""
+
+            # ── Connexion à la génération d'images (ComfyUI) ──
+            - name: COMFYUI_BASE_URL
+              value: "http://sd-server.ai-stack.svc.cluster.local:8000"
+            - name: ENABLE_IMAGE_GENERATION
               value: "true"
-            - name: ALLOW_EMAIL_LOGIN
+            - name: IMAGE_GENERATION_ENGINE
+              value: "comfyui"
+
+            # ── Divers ──
+            - name: WEBUI_AUTH
               value: "true"
-            - name: CREDS_KEY
+            - name: WEBUI_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: librechat-secrets
-                  key: CREDS_KEY
-            - name: CREDS_IV
-              valueFrom:
-                secretKeyRef:
-                  name: librechat-secrets
-                  key: CREDS_IV
-            - name: JWT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: librechat-secrets
-                  key: JWT_SECRET
-            - name: JWT_REFRESH_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: librechat-secrets
-                  key: JWT_REFRESH_SECRET
+                  name: open-webui-secrets
+                  key: WEBUI_SECRET_KEY
 
           ports:
             - name: http
-              containerPort: 3080
+              containerPort: 8080
               protocol: TCP
 
           volumeMounts:
-            - name: config
-              mountPath: /app/librechat.yaml
-              subPath: librechat.yaml
-              readOnly: true
+            - name: data
+              mountPath: /app/backend/data
 
           startupProbe:
             httpGet:
               path: /
               port: http
-            initialDelaySeconds: 10
-            periodSeconds: 5
+            initialDelaySeconds: 15
+            periodSeconds: 10
             failureThreshold: 12
 
           readinessProbe:
@@ -196,16 +116,16 @@ spec:
 
           resources:
             requests:
-              cpu: "100m"
-              memory: "256Mi"
-            limits:
-              cpu: "1"
+              cpu: "500m"
               memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
 
       volumes:
-        - name: config
-          configMap:
-            name: librechat-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: open-webui-data-pvc
 
 ---
 apiVersion: v1
@@ -221,6 +141,6 @@ spec:
     app: open-webui
   ports:
     - name: http
-      port: 3080
+      port: 8080
       targetPort: http
       protocol: TCP
