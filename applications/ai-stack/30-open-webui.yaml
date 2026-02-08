@@ -3,7 +3,7 @@
 #
 # Se connecte à :
 #   - llama-server (port 8080) pour le chat LLM via API OpenAI
-#   - sd-server (port 7860) pour la génération d'images via API AUTOMATIC1111
+#   - sd-server (port 8000) pour la génération d'images via ComfyUI
 #
 # Open WebUI peut tourner sur N'IMPORTE QUEL noeud du cluster
 # (pas besoin de GPU)
@@ -67,13 +67,13 @@ spec:
             - name: OLLAMA_BASE_URL
               value: ""
 
-            # ── Connexion à la génération d'images ──
-            - name: AUTOMATIC1111_BASE_URL
-              value: "http://sd-server.ai-stack.svc.cluster.local:7860"
+            # ── Connexion à la génération d'images (ComfyUI) ──
+            - name: COMFYUI_BASE_URL
+              value: "http://sd-server.ai-stack.svc.cluster.local:8000"
             - name: ENABLE_IMAGE_GENERATION
               value: "true"
             - name: IMAGE_GENERATION_ENGINE
-              value: "automatic1111"
+              value: "comfyui"
 
             # ── Divers ──
             - name: WEBUI_AUTH
