@@ -1,27 +1,13 @@
 ##############################################################################
-# Open WebUI — Interface unifiée LLM + Image Gen
+# LobeChat — Interface chat LLM
 #
 # Se connecte à :
 #   - llama-server (port 8080) pour le chat LLM via API OpenAI
-#   - sd-server (port 8000) pour la génération d'images via ComfyUI
+#   - ComfyUI accessible directement via sd-api.home.dohrm.fr
 #
-# Open WebUI peut tourner sur N'IMPORTE QUEL noeud du cluster
-# (pas besoin de GPU)
+# Mode client (sans base de données) — léger et simple
+# Port : 3210
 ##############################################################################
-
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: open-webui-data-pvc
-  namespace: ai-stack
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: local-path
-  resources:
-    requests:
-      storage: 5Gi
 
 ---
 apiVersion: apps/v1
@@ -51,34 +37,27 @@ spec:
           effect: "NoSchedule"
       nodeSelector:
         gpu-type: "strix-halo"
+
       containers:
-        - name: open-webui
-          image: ghcr.io/open-webui/open-webui:main
+        - name: lobechat
+          image: lobehub/lobe-chat:latest
           imagePullPolicy: IfNotPresent
 
           env:
             # ── Connexion au LLM (llama-server, API OpenAI-compatible) ──
-            - name: OPENAI_API_BASE_URL
-              value: "http://llama-server.ai-stack.svc.cluster.local:8080/v1"
             - name: OPENAI_API_KEY
               value: "sk-no-key-required"
+            - name: OPENAI_PROXY_URL
+              value: "http://llama-server.ai-stack.svc.cluster.local:8080/v1"
+            - name: OPENAI_MODEL_LIST
+              value: "qwen3-30b-a3b"
 
-            # ── Désactiver Ollama (on utilise llama-server directement) ──
-            - name: OLLAMA_BASE_URL
-              value: ""
+            # ── Désactiver Ollama ──
+            - name: ENABLED_OLLAMA
+              value: "0"
 
-            # ── Connexion à la génération d'images (ComfyUI) ──
-            - name: COMFYUI_BASE_URL
-              value: "http://sd-server.ai-stack.svc.cluster.local:8000"
-            - name: ENABLE_IMAGE_GENERATION
-              value: "true"
-            - name: IMAGE_GENERATION_ENGINE
-              value: "comfyui"
-
-            # ── Divers ──
-            - name: WEBUI_AUTH
-              value: "true"
-            - name: WEBUI_SECRET_KEY
+            # ── Accès ──
+            - name: ACCESS_CODE
               valueFrom:
                 secretKeyRef:
                   name: open-webui-secrets
@@ -86,19 +65,15 @@ spec:
 
           ports:
             - name: http
-              containerPort: 8080
+              containerPort: 3210
               protocol: TCP
-
-          volumeMounts:
-            - name: data
-              mountPath: /app/backend/data
 
           startupProbe:
             httpGet:
               path: /
               port: http
-            initialDelaySeconds: 15
-            periodSeconds: 10
+            initialDelaySeconds: 10
+            periodSeconds: 5
             failureThreshold: 12
 
           readinessProbe:
@@ -116,16 +91,11 @@ spec:
 
           resources:
             requests:
-              cpu: "500m"
-              memory: "512Mi"
+              cpu: "100m"
+              memory: "128Mi"
             limits:
-              cpu: "2"
-              memory: "2Gi"
-
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: open-webui-data-pvc
+              cpu: "1"
+              memory: "512Mi"
 
 ---
 apiVersion: v1
@@ -141,6 +111,6 @@ spec:
     app: open-webui
   ports:
     - name: http
-      port: 8080
+      port: 3210
       targetPort: http
       protocol: TCP
