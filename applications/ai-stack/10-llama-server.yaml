@@ -32,7 +32,7 @@ data:
   # -np      : nombre de slots parallèles
   # --no-mmap: évite les crashs mmap sur gfx1151
   N_GPU_LAYERS: "999"
-  CTX_SIZE: "8192"
+  CTX_SIZE: "65536"
   PARALLEL_SLOTS: "2"
 
 ---
