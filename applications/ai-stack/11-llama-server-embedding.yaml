@@ -1,0 +1,195 @@
+##############################################################################
+# llama-server-embedding (ROCm) — nomic-embed-text-v1.5
+#
+# Image : kyuz0/amd-strix-halo-toolboxes:rocm-6.4.4
+# Backend : ROCm 6.4.4 (AMD native GPU compute)
+# Modèle : nomic-embed-text-v1.5 (Q8_0, ~270 Mo)
+#           → Embedding model pour RAG / recherche sémantique
+#
+# API compatible OpenAI sur le port 8080
+##############################################################################
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llama-server-embedding-config
+  namespace: ai-stack
+data:
+  MODEL_PATH: "/models/nomic-embed-text-v1.5.Q8_0.gguf"
+  HOST: "0.0.0.0"
+  PORT: "8080"
+  N_GPU_LAYERS: "999"
+  CTX_SIZE: "2048"
+  PARALLEL_SLOTS: "4"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llama-server-embedding
+  namespace: ai-stack
+  labels:
+    app: llama-server-embedding
+    component: embedding
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: llama-server-embedding
+  template:
+    metadata:
+      labels:
+        app: llama-server-embedding
+        component: embedding
+    spec:
+      # ── Scheduling sur le noeud Strix Halo ────────────────
+      tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "ai"
+          effect: "NoSchedule"
+      nodeSelector:
+        gpu-type: "strix-halo"
+
+      # ── Validation du modèle ──────────────────────────────
+      initContainers:
+        - name: check-model
+          image: busybox:1.37
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "Checking model file: $(MODEL_PATH)"
+              if [ ! -f "$(MODEL_PATH)" ]; then
+                echo "ERROR: Model file not found: $(MODEL_PATH)"
+                echo "Available files in /models:"
+                ls -lh /models/ 2>/dev/null || echo "  (directory empty or missing)"
+                exit 1
+              fi
+              echo "OK: Model file found ($(du -h "$(MODEL_PATH)" | cut -f1))"
+          envFrom:
+            - configMapRef:
+                name: llama-server-embedding-config
+          volumeMounts:
+            - name: models
+              mountPath: /models
+              readOnly: true
+
+      # ── Conteneur principal ────────────────────────────────
+      containers:
+        - name: llama-server
+          image: docker.io/kyuz0/amd-strix-halo-toolboxes:rocm-6.4.4
+          imagePullPolicy: IfNotPresent
+
+          command: ["llama-server"]
+          args:
+            - "-m"
+            - "$(MODEL_PATH)"
+            - "--host"
+            - "$(HOST)"
+            - "--port"
+            - "$(PORT)"
+            - "-ngl"
+            - "$(N_GPU_LAYERS)"
+            - "-fa"
+            - "1"
+            - "-c"
+            - "$(CTX_SIZE)"
+            - "-np"
+            - "$(PARALLEL_SLOTS)"
+            - "--no-mmap"
+            - "-fit"
+            - "off"
+            - "--embedding"
+
+          envFrom:
+            - configMapRef:
+                name: llama-server-embedding-config
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          # ── Accès GPU ROCm ─────────────────────────────────
+          volumeMounts:
+            - name: dri
+              mountPath: /dev/dri
+            - name: kfd
+              mountPath: /dev/kfd
+            - name: models
+              mountPath: /models
+              readOnly: true
+
+          # ── Santé ──────────────────────────────────────────
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 30
+            timeoutSeconds: 5
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # ── Ressources ─────────────────────────────────────
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+
+          # ── Sécurité ───────────────────────────────────────
+          securityContext:
+            privileged: true
+            runAsUser: 0
+
+      # ── Volumes ──────────────────────────────────────────
+      volumes:
+        - name: dri
+          hostPath:
+            path: /dev/dri
+            type: Directory
+        - name: kfd
+          hostPath:
+            path: /dev/kfd
+            type: CharDevice
+        - name: models
+          persistentVolumeClaim:
+            claimName: ai-models-llm-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llama-server-embedding
+  namespace: ai-stack
+  labels:
+    app: llama-server-embedding
+spec:
+  type: ClusterIP
+  selector:
+    app: llama-server-embedding
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
