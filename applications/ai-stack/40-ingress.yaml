@@ -44,6 +44,18 @@ spec:
                 port:
                   number: 8080
 
+    # ── API Embedding directe ────────────────────────────────
+    - host: embedding-api.home.dohrm.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: llama-server-embedding
+                port:
+                  number: 8080
+
     # ── ComfyUI (Image Gen) ────────────────────────────────
     - host: sd-api.home.dohrm.fr
       http:

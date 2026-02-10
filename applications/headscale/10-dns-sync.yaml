@@ -41,6 +41,11 @@ data:
         "name": "n8n.home.dohrm.fr",
         "type": "A",
         "value": "100.64.0.1"
+      },
+      {
+        "name": "embedding-api.home.dohrm.fr",
+        "type": "A",
+        "value": "100.64.0.1"
       }
     ]
 
