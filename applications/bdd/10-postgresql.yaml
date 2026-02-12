@@ -66,8 +66,6 @@ spec:
             exec:
               command:
                 - pg_isready
-                - "-U"
-                - "$(POSTGRES_USER)"
             periodSeconds: 10
             timeoutSeconds: 5
 
@@ -75,8 +73,6 @@ spec:
             exec:
               command:
                 - pg_isready
-                - "-U"
-                - "$(POSTGRES_USER)"
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
