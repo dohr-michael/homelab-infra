@@ -1,11 +1,11 @@
 ##############################################################################
-# llama-server (ROCm) — Qwen3-30B-A3B
+# llama-server (ROCm) — Qwen3-Coder-30B-A3B
 #
 # Image : kyuz0/amd-strix-halo-toolboxes:rocm-6.4.4
 # Backend : ROCm 6.4.4 (AMD native GPU compute)
-# Modèle : Qwen3-30B-A3B-Instruct (MoE, 3B params actifs)
-#           → Génération rapide (~50 tok/s tg), qualité 30B
-#           → ~17 Go en BF16, ~10 Go en Q4_K_M
+# Modèle : Qwen3-Coder-30B-A3B-Instruct (MoE, 3.3B params actifs)
+#           → Spécialisé coding + agentic tool calling
+#           → ~18.6 Go en Q4_K_M, contexte natif 256K
 #
 # API compatible OpenAI sur le port 8080
 ##############################################################################
@@ -19,7 +19,7 @@ metadata:
 data:
   # ── Modèle ──────────────────────────────────────────────────
   # Ajuster selon le modèle téléchargé
-  MODEL_PATH: "/models/Qwen3-30B-A3B-Q4_K_M.gguf"
+  MODEL_PATH: "/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
 
   # ── Paramètres serveur ──────────────────────────────────────
   HOST: "0.0.0.0"
@@ -32,7 +32,7 @@ data:
   # -np      : nombre de slots parallèles
   # --no-mmap: évite les crashs mmap sur gfx1151
   N_GPU_LAYERS: "999"
-  CTX_SIZE: "32768"
+  CTX_SIZE: "65536"
   PARALLEL_SLOTS: "2"
 
 ---
