@@ -30,7 +30,7 @@ spec:
           args:
             - --source=ingress
             - --provider=ovh
-            - --domain-filter=home.dohrm.fr
+            - --domain-filter=dohrm.fr
             - --default-targets=51.178.19.49
             - --policy=upsert-only
             - --txt-owner-id=homelab
