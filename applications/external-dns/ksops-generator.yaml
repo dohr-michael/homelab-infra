@@ -1,0 +1,11 @@
+# KSOPS generator — dechiffre les secrets SOPS au moment du kustomize build
+apiVersion: viaduct.ai/v1
+kind: ksops
+metadata:
+  name: secrets-generator
+  annotations:
+    config.kubernetes.io/function: |
+      exec:
+        path: ksops
+files:
+  - ovh-credentials.secret.yaml

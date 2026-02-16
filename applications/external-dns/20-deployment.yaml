@@ -1,0 +1,61 @@
+##############################################################################
+# external-dns — Sync Ingress hosts vers OVH DNS
+#
+# Remplace le wildcard *.home.dohrm.fr par des records A explicites.
+# Pointe tous les records vers 51.178.19.49 (Caddy / vps-a7c3e9b8).
+##############################################################################
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: external-dns
+  namespace: external-dns
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: external-dns
+  template:
+    metadata:
+      labels:
+        app: external-dns
+    spec:
+      serviceAccountName: external-dns
+      containers:
+        - name: external-dns
+          image: registry.k8s.io/external-dns/external-dns:v0.15.1
+          args:
+            - --source=ingress
+            - --provider=ovh
+            - --domain-filter=home.dohrm.fr
+            - --default-targets=51.178.19.49
+            - --policy=upsert-only
+            - --txt-owner-id=homelab
+            - --txt-prefix=_extdns.
+            - --interval=1m
+            - --log-level=info
+          env:
+            - name: OVH_APPLICATION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ovh-credentials
+                  key: application-key
+            - name: OVH_APPLICATION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ovh-credentials
+                  key: application-secret
+            - name: OVH_CONSUMER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ovh-credentials
+                  key: consumer-key
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
