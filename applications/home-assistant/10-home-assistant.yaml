@@ -58,7 +58,6 @@ spec:
               mountPath: /config
             - name: dbus
               mountPath: /run/dbus
-              readOnly: true
           startupProbe:
             httpGet:
               path: /
