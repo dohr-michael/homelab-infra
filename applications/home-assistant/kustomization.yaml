@@ -7,3 +7,6 @@ resources:
   - 00-namespace.yaml
   - 10-home-assistant.yaml
   - 40-ingress.yaml
+
+generators:
+  - ksops-generator.yaml
