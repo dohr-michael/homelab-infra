@@ -32,8 +32,6 @@ spec:
       labels:
         app: home-assistant
     spec:
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
       nodeSelector:
         kubernetes.io/hostname: gmk-ai-master
       tolerations:
@@ -48,6 +46,7 @@ spec:
           ports:
             - name: http
               containerPort: 8123
+              hostPort: 8123
               protocol: TCP
           securityContext:
             capabilities:
