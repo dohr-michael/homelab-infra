@@ -49,9 +49,17 @@ spec:
             - name: http
               containerPort: 8123
               protocol: TCP
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+                - NET_RAW
           volumeMounts:
             - name: config
               mountPath: /config
+            - name: dbus
+              mountPath: /run/dbus
+              readOnly: true
           startupProbe:
             httpGet:
               path: /
@@ -83,6 +91,10 @@ spec:
         - name: config
           persistentVolumeClaim:
             claimName: home-assistant-config-pvc
+        - name: dbus
+          hostPath:
+            path: /run/dbus
+            type: Directory
 
 ---
 apiVersion: v1
