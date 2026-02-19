@@ -49,7 +49,7 @@ kubectl kustomize argocd/
 
 1. Create `applications/<app-name>/` with a `kustomization.yaml`
 2. Add `*.secret.yaml` files if needed (encrypt with `sops`)
-3. Add a `ksops-generator.yaml` listing the secret files
+3. **TOUJOURS** ajouter un `ksops-generator.yaml` — même sans secrets (`files: []`) : le CMP kustomize-sops est forcé sur toutes les apps par l'ApplicationSet, sans ce fichier le déploiement échoue
 4. Reference the generator in `kustomization.yaml` under `generators:`
 5. Push to `main` — ArgoCD ApplicationSet auto-discovers and deploys
 

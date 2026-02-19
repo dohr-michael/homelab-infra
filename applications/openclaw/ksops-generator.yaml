@@ -1,0 +1,11 @@
+# KSOPS generator — pas de secrets pour cette application
+# Fichier obligatoire : le CMP kustomize-sops est forcé sur toutes les apps
+apiVersion: viaduct.ai/v1
+kind: ksops
+metadata:
+  name: secrets-generator
+  annotations:
+    config.kubernetes.io/function: |
+      exec:
+        path: ksops
+files: []

@@ -8,3 +8,6 @@ resources:
   - 01-storage.yaml
   - 10-openclaw.yaml
   - 20-ingress.yaml
+
+generators:
+  - ksops-generator.yaml
