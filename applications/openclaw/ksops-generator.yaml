@@ -8,4 +8,5 @@ metadata:
     config.kubernetes.io/function: |
       exec:
         path: ksops
-files: []
+files:
+  - openclaw.secret.yaml

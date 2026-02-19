@@ -129,12 +129,11 @@ spec:
               value: /home/node
             - name: TERM
               value: xterm
-            # Token d'accès au gateway web — à mettre dans un Secret
-            # - name: OPENCLAW_GATEWAY_TOKEN
-            #   valueFrom:
-            #     secretKeyRef:
-            #       name: openclaw-secret
-            #       key: gateway-token
+            - name: OPENCLAW_GATEWAY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-secret
+                  key: gateway-token
 
           volumeMounts:
             # Données persistantes (sessions, workspace, pairing, config)
