@@ -21,7 +21,6 @@ data:
       // ── Agents ────────────────────────────────────────────────
       "agents": {
         "defaults": {
-          "name": "Claw",
           "model": {
             "primary": "llama-local/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M"
           }
@@ -49,9 +48,9 @@ data:
       },
 
       // ── Gateway ───────────────────────────────────────────────
-      // binding "lan" : écoute sur toutes les interfaces (requis en container)
+      // bind "lan" : écoute sur toutes les interfaces (requis en container)
       "gateway": {
-        "binding": "lan"
+        "bind": "lan"
       }
 
       // ── Channels ──────────────────────────────────────────────
