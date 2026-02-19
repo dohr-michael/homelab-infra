@@ -47,6 +47,11 @@ data:
         }
       },
 
+      // ── Gateway ───────────────────────────────────────────────
+      "gateway": {
+        "mode": "local"
+      },
+
       // ── Browser (Chromium sidecar) ────────────────────────────
       "browser": {
         "cdpUrl": "http://localhost:9222"
@@ -123,7 +128,7 @@ spec:
 
           # Lancer uniquement le gateway (pas le CLI)
           # Le CLI tourne via kubectl exec pour le pairing/device management
-          command: ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789"]
+          command: ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789", "--allow-unconfigured"]
 
           ports:
             - name: gateway
