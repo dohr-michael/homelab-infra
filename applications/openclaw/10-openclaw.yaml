@@ -1,0 +1,198 @@
+##############################################################################
+# OpenClaw — Assistant personnel IA
+#
+# Image  : ghcr.io/openclaw/openclaw:latest
+# Port   : 18789 (gateway web)
+# Modèle : Qwen3-Coder-30B-A3B via llama-server interne
+#
+# Config : seedée depuis ConfigMap via init container (modifiable ensuite)
+# Data   : PVC openclaw-data-pvc monté sur /home/node/.openclaw
+##############################################################################
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openclaw-config
+  namespace: openclaw
+data:
+  openclaw.json: |
+    {
+      // ── Agent ─────────────────────────────────────────────────
+      "agent": {
+        "model": "llama-local/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M",
+        "name": "Claw"
+      },
+
+      // ── Modèles ───────────────────────────────────────────────
+      "models": {
+        "mode": "merge",
+        "providers": {
+          "llama-local": {
+            "baseUrl": "http://llama-server.ai-stack.svc:8080/v1",
+            "apiKey": "local",
+            "api": "openai-completions",
+            "models": [
+              {
+                "id": "Qwen3-Coder-30B-A3B-Instruct-Q4_K_M",
+                "name": "Qwen3-Coder Local",
+                "contextWindow": 65536,
+                "maxTokens": 8192
+              }
+            ]
+          }
+        }
+      },
+
+      // ── Gateway ───────────────────────────────────────────────
+      // binding "lan" : écoute sur toutes les interfaces (requis en container)
+      "gateway": {
+        "binding": "lan"
+      }
+
+      // ── Channels ──────────────────────────────────────────────
+      // À configurer selon le canal souhaité (Telegram, WhatsApp…)
+      // Voir : https://docs.openclaw.ai/channels
+      // "channels": {}
+    }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openclaw
+  namespace: openclaw
+  labels:
+    app: openclaw
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: openclaw
+  template:
+    metadata:
+      labels:
+        app: openclaw
+    spec:
+      # ── Scheduling sur le noeud Strix Halo ────────────────────
+      # Forcé par l'affinité du PV ; la tolérance est nécessaire
+      # car le noeud a le taint dedicated=ai:NoSchedule
+      tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "ai"
+          effect: "NoSchedule"
+      nodeSelector:
+        gpu-type: "strix-halo"
+
+      # ── Init : seed de la config si absente ───────────────────
+      # Le fichier peut évoluer (pairing channel, tokens…) — on ne
+      # l'écrase pas s'il existe déjà sur le PVC.
+      initContainers:
+        - name: init-config
+          image: busybox:1.37
+          command: ["sh", "-c"]
+          args:
+            - |
+              CONFIG=/data/openclaw.json
+              if [ ! -f "$CONFIG" ]; then
+                echo "Initialisation de la config depuis le template…"
+                cp /config-template/openclaw.json "$CONFIG"
+                echo "OK"
+              else
+                echo "Config déjà présente, on ne l'écrase pas."
+              fi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config-template
+              readOnly: true
+
+      containers:
+        - name: openclaw
+          image: ghcr.io/openclaw/openclaw:latest
+          imagePullPolicy: Always
+
+          ports:
+            - name: gateway
+              containerPort: 18789
+              protocol: TCP
+
+          env:
+            - name: HOME
+              value: /home/node
+            - name: TERM
+              value: xterm
+            # Token d'accès au gateway web — à mettre dans un Secret
+            # - name: OPENCLAW_GATEWAY_TOKEN
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: openclaw-secret
+            #       key: gateway-token
+
+          volumeMounts:
+            # Données persistantes (sessions, workspace, pairing, config)
+            - name: data
+              mountPath: /home/node/.openclaw
+
+          # ── Santé ──────────────────────────────────────────────
+          startupProbe:
+            httpGet:
+              path: /
+              port: gateway
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 12    # 60s pour démarrer
+            timeoutSeconds: 3
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: gateway
+            periodSeconds: 15
+            timeoutSeconds: 3
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: gateway
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: openclaw-data-pvc
+        - name: config
+          configMap:
+            name: openclaw-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openclaw
+  namespace: openclaw
+  labels:
+    app: openclaw
+spec:
+  type: ClusterIP
+  selector:
+    app: openclaw
+  ports:
+    - name: gateway
+      port: 18789
+      targetPort: gateway
+      protocol: TCP

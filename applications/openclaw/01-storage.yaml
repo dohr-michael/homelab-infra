@@ -1,0 +1,55 @@
+##############################################################################
+# Stockage persistant pour OpenClaw
+# Données sur le noeud Strix Halo dans /srv/openclaw
+#
+# Contenu :
+#   /srv/openclaw/
+#   ├── workspace/     # Fichiers créés par l'agent
+#   └── sessions/      # Sessions & pairing messagerie (WhatsApp, Telegram…)
+#
+# Prérequis : créer le répertoire sur gmk-ai-master
+#   sudo mkdir -p /srv/openclaw && sudo chmod 777 /srv/openclaw
+##############################################################################
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: openclaw-data-pv
+  labels:
+    type: local
+    app: openclaw
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-ai
+  local:
+    path: /srv/openclaw
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: gpu-type
+              operator: In
+              values:
+                - strix-halo
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openclaw-data-pvc
+  namespace: openclaw
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-ai
+  resources:
+    requests:
+      storage: 10Gi
+  selector:
+    matchLabels:
+      app: openclaw
