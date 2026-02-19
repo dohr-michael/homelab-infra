@@ -107,6 +107,9 @@ spec:
               else
                 echo "Config déjà présente, on ne l'écrase pas."
               fi
+              echo "Correction des permissions (node uid=1000)…"
+              chown -R 1000:1000 /data
+              chmod -R 755 /data
           volumeMounts:
             - name: data
               mountPath: /data
