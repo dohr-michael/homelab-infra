@@ -129,6 +129,8 @@ spec:
               value: /home/node
             - name: TERM
               value: xterm
+            - name: NODE_OPTIONS
+              value: "--max-old-space-size=1536"
             - name: OPENCLAW_GATEWAY_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -168,10 +170,10 @@ spec:
           resources:
             requests:
               cpu: "250m"
-              memory: "256Mi"
+              memory: "512Mi"
             limits:
               cpu: "1"
-              memory: "1Gi"
+              memory: "2Gi"
 
       volumes:
         - name: data
