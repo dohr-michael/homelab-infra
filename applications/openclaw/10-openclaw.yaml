@@ -47,12 +47,6 @@ data:
         }
       },
 
-      // ── Gateway ───────────────────────────────────────────────
-      // bind "lan" : écoute sur toutes les interfaces (requis en container)
-      "gateway": {
-        "bind": "lan"
-      }
-
       // ── Channels ──────────────────────────────────────────────
       // À configurer selon le canal souhaité (Telegram, WhatsApp…)
       // Voir : https://docs.openclaw.ai/channels
@@ -121,6 +115,10 @@ spec:
         - name: openclaw
           image: ghcr.io/openclaw/openclaw:latest
           imagePullPolicy: Always
+
+          # Lancer uniquement le gateway (pas le CLI)
+          # Le CLI tourne via kubectl exec pour le pairing/device management
+          command: ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789"]
 
           ports:
             - name: gateway
