@@ -18,10 +18,14 @@ metadata:
 data:
   openclaw.json: |
     {
-      // ── Agent ─────────────────────────────────────────────────
-      "agent": {
-        "model": "llama-local/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M",
-        "name": "Claw"
+      // ── Agents ────────────────────────────────────────────────
+      "agents": {
+        "defaults": {
+          "name": "Claw",
+          "model": {
+            "primary": "llama-local/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M"
+          }
+        }
       },
 
       // ── Modèles ───────────────────────────────────────────────
