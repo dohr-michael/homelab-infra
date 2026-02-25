@@ -54,7 +54,7 @@ spec:
       containers:
         - name: open-webui
           image: ghcr.io/open-webui/open-webui:main
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
 
           env:
             # ── Connexion au LLM (llama-server, API OpenAI-compatible) ──

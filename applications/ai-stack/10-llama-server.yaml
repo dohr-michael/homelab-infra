@@ -20,7 +20,7 @@ data:
   # ── Modèle ──────────────────────────────────────────────────
   # Ajuster selon le modèle téléchargé
   # MODEL_PATH: "/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
-  MODEL_PATH: "/models/GLM-4.7-Flash-Q4_K_M.gguf"
+  MODEL_PATH: "/models/Mistral-Small-3.2-24B-Instruct-2506-Q4_K_M.gguf"
   
   # ── Paramètres serveur ──────────────────────────────────────
   HOST: "0.0.0.0"
@@ -33,7 +33,7 @@ data:
   # -np      : nombre de slots parallèles
   # --no-mmap: évite les crashs mmap sur gfx1151
   N_GPU_LAYERS: "999"
-  CTX_SIZE: "65536"
+  CTX_SIZE: "32768"
   PARALLEL_SLOTS: "2"
 
 ---
@@ -94,7 +94,7 @@ spec:
       containers:
         - name: llama-server
           image: docker.io/kyuz0/amd-strix-halo-toolboxes:rocm-6.4.4
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
 
           command: ["llama-server"]
           args:
@@ -115,6 +115,12 @@ spec:
             - "--no-mmap"
             - "-fit"
             - "off"
+            # New one
+            - "--cache-type-k"
+            - "q8_0"
+            - "--cache-type-v" 
+            - "q8_0"
+            - "--cont-batching"
 
           envFrom:
             - configMapRef:

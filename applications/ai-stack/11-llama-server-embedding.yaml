@@ -20,8 +20,8 @@ data:
   HOST: "0.0.0.0"
   PORT: "8080"
   N_GPU_LAYERS: "999"
-  CTX_SIZE: "2048"
-  PARALLEL_SLOTS: "4"
+  CTX_SIZE: "512"
+  PARALLEL_SLOTS: "8"
 
 ---
 apiVersion: apps/v1
@@ -81,7 +81,7 @@ spec:
       containers:
         - name: llama-server
           image: docker.io/kyuz0/amd-strix-halo-toolboxes:rocm-6.4.4
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
 
           command: ["llama-server"]
           args:
