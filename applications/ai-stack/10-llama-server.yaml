@@ -20,7 +20,8 @@ data:
   # ── Modèle ──────────────────────────────────────────────────
   # Ajuster selon le modèle téléchargé
   # MODEL_PATH: "/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
-  MODEL_PATH: "/models/Mistral-Small-3.2-24B-Instruct-2506-Q4_K_M.gguf"
+  # MODEL_PATH: "/models/Mistral-Small-3.2-24B-Instruct-2506-Q4_K_M.gguf"
+  MODEL_PATH: "/models/Qwen3-30B-A3B-Q4_K_M.gguf"
   
   # ── Paramètres serveur ──────────────────────────────────────
   HOST: "0.0.0.0"
