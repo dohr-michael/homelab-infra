@@ -34,7 +34,7 @@ data:
   # -np      : nombre de slots parallèles
   # --no-mmap: évite les crashs mmap sur gfx1151
   N_GPU_LAYERS: "999"
-  CTX_SIZE: "65536"
+  CTX_SIZE: "32768"
   PARALLEL_SLOTS: "2"
 
 ---
@@ -97,7 +97,7 @@ spec:
           image: docker.io/kyuz0/amd-strix-halo-toolboxes:rocm-6.4.4
           imagePullPolicy: Always
 
-          command: ["llama-server-code"]
+          command: ["llama-server"]
           args:
             - "-m"
             - "$(MODEL_PATH)"
