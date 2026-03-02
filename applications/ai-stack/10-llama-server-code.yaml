@@ -1,5 +1,5 @@
 ##############################################################################
-# llama-server (ROCm) — Qwen3-Coder-30B-A3B
+# llama-server-code (ROCm) — Qwen3-Coder-30B-A3B
 #
 # Image : kyuz0/amd-strix-halo-toolboxes:rocm-6.4.4
 # Backend : ROCm 6.4.4 (AMD native GPU compute)
@@ -14,13 +14,13 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: llama-server-config
+  name: llama-server-code-config
   namespace: ai-stack
 data:
   # ── Modèle ──────────────────────────────────────────────────
   # Ajuster selon le modèle téléchargé
-  # MODEL_PATH: "/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
-  MODEL_PATH: "/models/Mistral-Small-3.2-24B-Instruct-2506-Q4_K_M.gguf"
+  MODEL_PATH: "/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
+  # MODEL_PATH: "/models/Mistral-Small-3.2-24B-Instruct-2506-Q4_K_M.gguf"
   # MODEL_PATH: "/models/Qwen3-30B-A3B-Q4_K_M.gguf"
   
   # ── Paramètres serveur ──────────────────────────────────────
@@ -41,10 +41,10 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: llama-server
+  name: llama-server-code
   namespace: ai-stack
   labels:
-    app: llama-server
+    app: llama-server-code
     component: llm
 spec:
   replicas: 1
@@ -52,11 +52,11 @@ spec:
     type: Recreate           # GPU partagé, pas de rolling update
   selector:
     matchLabels:
-      app: llama-server
+      app: llama-server-code
   template:
     metadata:
       labels:
-        app: llama-server
+        app: llama-server-code
         component: llm
     spec:
       # ── Scheduling sur le noeud Strix Halo ────────────────
@@ -85,7 +85,7 @@ spec:
               echo "OK: Model file found ($(du -h "$(MODEL_PATH)" | cut -f1))"
           envFrom:
             - configMapRef:
-                name: llama-server-config
+                name: llama-server-code-config
           volumeMounts:
             - name: models
               mountPath: /models
@@ -93,11 +93,11 @@ spec:
 
       # ── Conteneur principal ────────────────────────────────
       containers:
-        - name: llama-server
+        - name: llama-server-code
           image: docker.io/kyuz0/amd-strix-halo-toolboxes:rocm-6.4.4
           imagePullPolicy: Always
 
-          command: ["llama-server"]
+          command: ["llama-server-code"]
           args:
             - "-m"
             - "$(MODEL_PATH)"
@@ -125,7 +125,7 @@ spec:
 
           envFrom:
             - configMapRef:
-                name: llama-server-config
+                name: llama-server-code-config
 
           ports:
             - name: http
@@ -201,14 +201,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: llama-server
+  name: llama-server-code
   namespace: ai-stack
   labels:
-    app: llama-server
+    app: llama-server-code
 spec:
   type: ClusterIP
   selector:
-    app: llama-server
+    app: llama-server-code
   ports:
     - name: http
       port: 8080
