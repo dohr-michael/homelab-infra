@@ -1,10 +1,8 @@
 ##############################################################################
-# llama-server-embedding (ROCm) — nomic-embed-text-v1.5
+# llm-server (ROCm)
 #
 # Image : kyuz0/amd-strix-halo-toolboxes:rocm-6.4.4
 # Backend : ROCm 6.4.4 (AMD native GPU compute)
-# Modèle : nomic-embed-text-v1.5 (Q8_0, ~270 Mo)
-#           → Embedding model pour RAG / recherche sémantique
 #
 # API compatible OpenAI sur le port 8080
 ##############################################################################
@@ -13,37 +11,40 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: llama-server-embedding-config
+  name: llm-server-internal-config
   namespace: ai-stack
 data:
-  MODEL_PATH: "/models/nomic-embed-text-v1.5.Q8_0.gguf"
+  # ── Paramètres inférence ────────────────────────────────────
+  # -ngl 999 : offload tous les layers sur GPU
+  # -fa      : flash attention (OBLIGATOIRE sur Strix Halo)
+  # -c       : taille du contexte
+  # -np      : nombre de slots parallèles
+  # --no-mmap: évite les crashs mmap sur gfx1151
   HOST: "0.0.0.0"
   PORT: "8080"
   N_GPU_LAYERS: "999"
-  CTX_SIZE: "512"
-  PARALLEL_SLOTS: "8"
 
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: llama-server-embedding
+  name: llm-server
   namespace: ai-stack
   labels:
-    app: llama-server-embedding
-    component: embedding
+    app: llm-server
+    component: llm
 spec:
   replicas: 1
   strategy:
-    type: Recreate
+    type: Recreate # GPU partagé, pas de rolling update
   selector:
     matchLabels:
-      app: llama-server-embedding
+      app: llm-server
   template:
     metadata:
       labels:
-        app: llama-server-embedding
-        component: embedding
+        app: llm-server
+        component: llm
     spec:
       # ── Scheduling sur le noeud Strix Halo ────────────────
       tolerations:
@@ -54,7 +55,7 @@ spec:
       nodeSelector:
         gpu-type: "strix-halo"
 
-      # ── Validation du modèle ──────────────────────────────
+      # ── Validation des modèles ──────────────────────────────
       initContainers:
         - name: check-model
           image: busybox:1.37
@@ -71,7 +72,7 @@ spec:
               echo "OK: Model file found ($(du -h "$(MODEL_PATH)" | cut -f1))"
           envFrom:
             - configMapRef:
-                name: llama-server-embedding-config
+                name: llm-server-config
           volumeMounts:
             - name: models
               mountPath: /models
@@ -79,7 +80,7 @@ spec:
 
       # ── Conteneur principal ────────────────────────────────
       containers:
-        - name: llama-server
+        - name: llm-server
           image: docker.io/kyuz0/amd-strix-halo-toolboxes:rocm-6.4.4
           imagePullPolicy: Always
 
@@ -102,11 +103,18 @@ spec:
             - "--no-mmap"
             - "-fit"
             - "off"
-            - "--embedding"
+            # New one
+            - "--cache-type-k"
+            - "q8_0"
+            - "--cache-type-v" 
+            - "q8_0"
+            - "--cont-batching"
 
           envFrom:
             - configMapRef:
-                name: llama-server-embedding-config
+                name: llm-server-config
+            - configMapRef:
+                name: llm-server-internal-config
 
           ports:
             - name: http
@@ -114,6 +122,7 @@ spec:
               protocol: TCP
 
           # ── Accès GPU ROCm ─────────────────────────────────
+          # /dev/dri + /dev/kfd requis par ROCm
           volumeMounts:
             - name: dri
               mountPath: /dev/dri
@@ -128,9 +137,9 @@ spec:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 10
-            periodSeconds: 5
-            failureThreshold: 30
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 30     # Jusqu'à 5 min pour charger le modèle
             timeoutSeconds: 5
 
           readinessProbe:
@@ -151,13 +160,14 @@ spec:
           # ── Ressources ─────────────────────────────────────
           resources:
             requests:
-              cpu: "500m"
-              memory: "512Mi"
-            limits:
               cpu: "2"
-              memory: "2Gi"
+              memory: "4Gi"
+            limits:
+              cpu: "8"
+              memory: "16Gi"
 
           # ── Sécurité ───────────────────────────────────────
+          # privileged requis : SELinux bloque les allocations mémoire HSA de ROCm
           securityContext:
             privileged: true
             runAsUser: 0
@@ -180,14 +190,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: llama-server-embedding
+  name: llm-server
   namespace: ai-stack
   labels:
-    app: llama-server-embedding
+    app: llm-server
 spec:
   type: ClusterIP
   selector:
-    app: llama-server-embedding
+    app: llm-server
   ports:
     - name: http
       port: 8080

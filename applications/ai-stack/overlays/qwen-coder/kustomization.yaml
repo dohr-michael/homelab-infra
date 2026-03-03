@@ -1,0 +1,15 @@
+resources:
+  - ../../base
+
+labels:
+  - includeSelectors: true
+    pairs:
+      app: qwen-30b
+namePrefix: qwen-coder-
+
+configMapGenerator:
+- name: llm-server-config
+  literals:
+    - MODEL_PATH="/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
+    - CTX_SIZE="32768"
+    - PARALLEL_SLOTS="2"

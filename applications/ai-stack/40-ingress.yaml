@@ -40,7 +40,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: llama-server
+                name: mistral-llm-server
                 port:
                   number: 8080
     - host: llm-api-code.home.dohrm.fr
@@ -50,7 +50,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: llama-server-code
+                name: qwen-coder-llm-server
                 port:
                   number: 8080
 
@@ -62,7 +62,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: llama-server-embedding
+                name: nomic-llm-server
                 port:
                   number: 8080
 
