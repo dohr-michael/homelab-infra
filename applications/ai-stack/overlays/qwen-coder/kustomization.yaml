@@ -13,3 +13,12 @@ configMapGenerator:
     - MODEL_PATH="/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
     - CTX_SIZE="32768"
     - PARALLEL_SLOTS="2"
+
+patches:
+  - patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--jinja"
+    target:
+      kind: Deployment
+      name: llm-server

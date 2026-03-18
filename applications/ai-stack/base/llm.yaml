@@ -81,7 +81,7 @@ spec:
       # ── Conteneur principal ────────────────────────────────
       containers:
         - name: llm-server
-          image: docker.io/kyuz0/amd-strix-halo-toolboxes:rocm-6.4.4
+          image: docker.io/kyuz0/amd-strix-halo-toolboxes:rocm-7.2
           imagePullPolicy: Always
 
           command: ["llama-server"]
@@ -103,12 +103,6 @@ spec:
             - "--no-mmap"
             - "-fit"
             - "off"
-            # New one
-            - "--cache-type-k"
-            - "q8_0"
-            - "--cache-type-v" 
-            - "q8_0"
-            - "--cont-batching"
 
           envFrom:
             - configMapRef:
