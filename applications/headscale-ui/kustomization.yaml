@@ -4,6 +4,7 @@ kind: Kustomization
 namespace: headscale
 
 resources:
+  - 00-namespace.yaml
   - 10-deployment.yaml
   - 40-ingress.yaml
 
