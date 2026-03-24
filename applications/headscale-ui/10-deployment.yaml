@@ -1,0 +1,51 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: headscale-ui
+  namespace: headscale
+  labels:
+    app: headscale-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: headscale-ui
+  template:
+    metadata:
+      labels:
+        app: headscale-ui
+    spec:
+      containers:
+        - name: headscale-ui
+          image: ghcr.io/gurucomputing/headscale-ui:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "200m"
+              memory: "64Mi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: headscale-ui
+  namespace: headscale
+  labels:
+    app: headscale-ui
+spec:
+  type: ClusterIP
+  selector:
+    app: headscale-ui
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

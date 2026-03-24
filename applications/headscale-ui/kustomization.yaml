@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: headscale
+
+resources:
+  - 10-deployment.yaml
+  - 40-ingress.yaml
+
+generators:
+  - ksops-generator.yaml

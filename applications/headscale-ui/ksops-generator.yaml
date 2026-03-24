@@ -1,0 +1,9 @@
+apiVersion: viaduct.ai/v1
+kind: ksops
+metadata:
+  name: headscale-ui-ksops-generator
+  annotations:
+    config.kubernetes.io/function: |
+      exec:
+        path: ksops
+files: []
