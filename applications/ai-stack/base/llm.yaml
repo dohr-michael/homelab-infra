@@ -101,7 +101,6 @@ spec:
             - "-np"
             - "$(PARALLEL_SLOTS)"
             - "--no-mmap"
-            - "--jinja"
             - "-fit"
             - "off"
 
