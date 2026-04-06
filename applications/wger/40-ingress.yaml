@@ -8,7 +8,7 @@ metadata:
     traefik.ingress.kubernetes.io/router.entrypoints: web
 spec:
   rules:
-    - host: wger.home.dohrm.fr
+    - host: wger.dohrm.fr
       http:
         paths:
           - path: /
