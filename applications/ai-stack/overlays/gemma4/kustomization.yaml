@@ -1,0 +1,16 @@
+resources:
+  - ../../base
+
+labels:
+  - includeSelectors: true
+    pairs:
+      app: gemma4-26b
+
+namePrefix: gemma4-
+
+configMapGenerator:
+- name: llm-server-config
+  literals:
+    - MODEL_PATH="/models/gemma-4-26B-A4B-it-Q4_K_M.gguf"
+    - CTX_SIZE="262144"
+    - PARALLEL_SLOTS="4"

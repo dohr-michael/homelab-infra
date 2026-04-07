@@ -6,9 +6,8 @@ namespace: ai-stack
 resources:
   - 00-namespace.yaml
   - 01-storage.yaml
-  - overlays/mistral
+  - overlays/gemma4
   - overlays/nomic
-  - overlays/qwen-coder
   - 20-sd-server.yaml
   - 30-open-webui.yaml
   - 40-ingress.yaml

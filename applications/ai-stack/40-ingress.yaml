@@ -32,7 +32,7 @@ spec:
                 port:
                   number: 8080
 
-    # ── API LLM directe (optionnel) ─────────────────────────
+    # ── API LLM directe ─────────────────────────────────────
     - host: llm-api.home.dohrm.fr
       http:
         paths:
@@ -40,7 +40,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: mistral-llm-server
+                name: gemma4-llm-server
                 port:
                   number: 8080
     - host: llm-api-code.home.dohrm.fr
@@ -50,7 +50,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: qwen-coder-llm-server
+                name: gemma4-llm-server
                 port:
                   number: 8080
 
