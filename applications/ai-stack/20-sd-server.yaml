@@ -74,6 +74,13 @@ spec:
 
               clone_or_update https://github.com/Lightricks/ComfyUI-LTXVideo.git ComfyUI-LTXVideo
 
+              # Symlink diffusion_models → checkpoints pour CheckpointLoaderSimple et LTXVGemmaCLIPModelLoader
+              MODELS_DIR=/opt/ComfyUI/models
+              for f in $MODELS_DIR/diffusion_models/*.safetensors; do
+                [ -f "$f" ] || continue
+                ln -sf "$f" "$MODELS_DIR/checkpoints/$(basename $f)" 2>/dev/null || true
+              done
+
               for req in $(find $NODES -maxdepth 2 -name requirements.txt); do
                 echo "pip install : $req"
                 grep -vE "^(torch|torchvision|torchaudio|nvidia-|triton)" $req \
