@@ -74,7 +74,8 @@ spec:
 
               for req in $(find $TARGET -maxdepth 2 -name requirements.txt); do
                 echo "pip install : $req"
-                pip install -r $req --target $TARGET/.packages/ -q --upgrade 2>/dev/null || true
+                grep -vE "^(torch|torchvision|torchaudio|nvidia-|triton)" $req \
+                  | pip install --target $TARGET/.packages/ -q 2>/dev/null || true
               done
 
               echo "Custom nodes prêts."
