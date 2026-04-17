@@ -4,8 +4,11 @@
 #
 # Structure attendue sur le noeud :
 #   /srv/ai-models/
-#   ├── llm/          # Modèles GGUF pour llama.cpp
-#   └── diffusion/    # Modèles pour stable-diffusion.cpp
+#   ├── llm/                    # Modèles GGUF pour llama.cpp
+#   └── diffusion/              # Modèles ComfyUI
+#       ├── diffusion_models/   # LTX-2.3 22B et autres
+#       ├── text_encoders/
+#       └── vae/
 ##############################################################################
 
 ---
@@ -70,7 +73,7 @@ metadata:
     app: sd-server
 spec:
   capacity:
-    storage: 50Gi
+    storage: 200Gi
   accessModes:
     - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
@@ -98,7 +101,7 @@ spec:
   storageClassName: local-ai
   resources:
     requests:
-      storage: 50Gi
+      storage: 200Gi
   selector:
     matchLabels:
       app: sd-server
