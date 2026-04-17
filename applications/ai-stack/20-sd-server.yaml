@@ -40,6 +40,48 @@ spec:
       nodeSelector:
         gpu-type: "strix-halo"
 
+      # ── Init : custom nodes ───────────────────────────────
+      # Copie les nodes baked-in, clone ComfyUI-LTXVideo,
+      # installe les pip deps dans .packages/ (partagé via PYTHONPATH)
+      initContainers:
+        - name: setup-custom-nodes
+          image: docker.io/kyuz0/amd-strix-halo-comfyui:latest
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -e
+              TARGET=/mnt/custom_nodes
+
+              if [ ! -f "$TARGET/.initialized" ]; then
+                echo "Premier démarrage : copie des nodes baked-in..."
+                cp -r /opt/ComfyUI/custom_nodes/. $TARGET/
+                touch $TARGET/.initialized
+              fi
+
+              clone_or_update() {
+                local repo=$1 dir=$2
+                if [ ! -d "$TARGET/$dir" ]; then
+                  echo "Clonage de $dir..."
+                  git clone --depth 1 $repo $TARGET/$dir
+                else
+                  echo "Mise à jour de $dir..."
+                  git -C $TARGET/$dir pull --ff-only || true
+                fi
+              }
+
+              clone_or_update https://github.com/Lightricks/ComfyUI-LTXVideo.git ComfyUI-LTXVideo
+
+              for req in $(find $TARGET -maxdepth 2 -name requirements.txt); do
+                echo "pip install : $req"
+                pip install -r $req --target $TARGET/.packages/ -q --upgrade 2>/dev/null || true
+              done
+
+              echo "Custom nodes prêts."
+          volumeMounts:
+            - name: custom-nodes
+              mountPath: /mnt/custom_nodes
+
       # ── Conteneur principal ────────────────────────────────
       containers:
         - name: comfyui
@@ -59,6 +101,10 @@ spec:
             - "--cache-none"
             - "--bf16-vae"
 
+          env:
+            - name: PYTHONPATH
+              value: /opt/ComfyUI/custom_nodes/.packages
+
           ports:
             - name: http
               containerPort: 8000
@@ -74,6 +120,8 @@ spec:
             - name: models
               mountPath: /opt/ComfyUI/models
               readOnly: true
+            - name: custom-nodes
+              mountPath: /opt/ComfyUI/custom_nodes
             - name: output
               mountPath: /outputs
 
@@ -129,6 +177,9 @@ spec:
         - name: models
           persistentVolumeClaim:
             claimName: ai-models-diffusion-pvc
+        - name: custom-nodes
+          persistentVolumeClaim:
+            claimName: ai-custom-nodes-pvc
         - name: output
           emptyDir: {}
 
