@@ -104,6 +104,9 @@ spec:
             - "--cache-none"
             - "--bf16-vae"
 
+          envFrom:
+            - secretRef:
+                name: sd-server-secrets
           env:
             - name: PYTHONPATH
               value: /opt/.pip-packages
