@@ -51,31 +51,33 @@ spec:
           args:
             - |
               set -e
-              TARGET=/mnt/custom_nodes
+              NODES=/mnt/custom_nodes/nodes
+              PACKAGES=/mnt/custom_nodes/packages
+              mkdir -p $NODES $PACKAGES
 
-              if [ ! -f "$TARGET/.initialized" ]; then
+              if [ ! -f "$NODES/.initialized" ]; then
                 echo "Premier démarrage : copie des nodes baked-in..."
-                cp -r /opt/ComfyUI/custom_nodes/. $TARGET/
-                touch $TARGET/.initialized
+                cp -r /opt/ComfyUI/custom_nodes/. $NODES/
+                touch $NODES/.initialized
               fi
 
               clone_or_update() {
                 local repo=$1 dir=$2
-                if [ ! -d "$TARGET/$dir" ]; then
+                if [ ! -d "$NODES/$dir" ]; then
                   echo "Clonage de $dir..."
-                  git clone --depth 1 $repo $TARGET/$dir
+                  git clone --depth 1 $repo $NODES/$dir
                 else
                   echo "Mise à jour de $dir..."
-                  git -C $TARGET/$dir pull --ff-only || true
+                  git -C $NODES/$dir pull --ff-only || true
                 fi
               }
 
               clone_or_update https://github.com/Lightricks/ComfyUI-LTXVideo.git ComfyUI-LTXVideo
 
-              for req in $(find $TARGET -maxdepth 2 -name requirements.txt); do
+              for req in $(find $NODES -maxdepth 2 -name requirements.txt); do
                 echo "pip install : $req"
                 grep -vE "^(torch|torchvision|torchaudio|nvidia-|triton)" $req \
-                  | pip install --target $TARGET/.packages/ -q 2>/dev/null || true
+                  | pip install --target $PACKAGES/ -q 2>/dev/null || true
               done
 
               echo "Custom nodes prêts."
@@ -104,7 +106,7 @@ spec:
 
           env:
             - name: PYTHONPATH
-              value: /opt/ComfyUI/custom_nodes/.packages
+              value: /opt/.pip-packages
 
           ports:
             - name: http
@@ -123,6 +125,10 @@ spec:
               readOnly: true
             - name: custom-nodes
               mountPath: /opt/ComfyUI/custom_nodes
+              subPath: nodes
+            - name: custom-nodes
+              mountPath: /opt/.pip-packages
+              subPath: packages
             - name: output
               mountPath: /outputs
 
