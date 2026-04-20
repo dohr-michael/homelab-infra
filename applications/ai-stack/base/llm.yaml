@@ -133,7 +133,7 @@ spec:
               port: http
             initialDelaySeconds: 30
             periodSeconds: 10
-            failureThreshold: 30     # Jusqu'à 5 min pour charger le modèle
+            failureThreshold: 30 # Jusqu'à 5 min pour charger le modèle
             timeoutSeconds: 5
 
           readinessProbe:
