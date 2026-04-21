@@ -15,14 +15,14 @@ configMapGenerator:
       - CTX_SIZE="262144"
       - PARALLEL_SLOTS="2"
 
-patches:
-  - target:
-      kind: Deployment
-      name: llm-server
-    patch: |-
-      - op: add
-        path: /spec/template/spec/containers/0/args/-
-        value: '--chat-template'
-      - op: add
-        path: /spec/template/spec/containers/0/args/-
-        value: 'gemma3'
+# patches:
+#   - target:
+#       kind: Deployment
+#       name: llm-server
+#     patch: |-
+#       - op: add
+#         path: /spec/template/spec/containers/0/args/-
+#         value: '--chat-template'
+#       - op: add
+#         path: /spec/template/spec/containers/0/args/-
+#         value: 'gemma3'
