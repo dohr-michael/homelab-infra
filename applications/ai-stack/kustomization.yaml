@@ -6,6 +6,7 @@ namespace: ai-stack
 resources:
   - 00-namespace.yaml
   - 01-storage.yaml
+  - 10-whisper.yaml
   - overlays/gemma4
   - overlays/nomic
   - 20-sd-server.yaml

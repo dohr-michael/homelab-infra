@@ -117,6 +117,10 @@ spec:
           env:
             - name: PYTHONPATH
               value: /opt/.pip-packages
+            - name: TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL
+              value: "1"
+            - name: TORCH_BLAS_PREFER_HIPBLASLT
+              value: "1"
 
           ports:
             - name: http

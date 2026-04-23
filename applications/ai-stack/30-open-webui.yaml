@@ -75,6 +75,16 @@ spec:
             - name: IMAGE_GENERATION_ENGINE
               value: "comfyui"
 
+            # ── STT (whisper-server sur gpu-worker-1060) ──────────
+            - name: AUDIO_STT_ENGINE
+              value: "openai"
+            - name: AUDIO_STT_OPENAI_API_BASE_URL
+              value: "http://whisper-server.ai-stack.svc.cluster.local:9000"
+            - name: AUDIO_STT_OPENAI_API_KEY
+              value: "sk-no-key-required"
+            - name: AUDIO_STT_MODEL
+              value: "whisper-1"
+
             # ── Divers ──
             - name: WEBUI_AUTH
               value: "true"

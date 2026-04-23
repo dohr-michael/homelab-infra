@@ -1,0 +1,46 @@
+##############################################################################
+# Whisper STT Server — Transcription audio (large-v3-turbo, Vulkan)
+#
+# Binaire : whisper-server compilé nativement sur gpu-worker-1060
+# Backend : Vulkan (GTX 1060 6GB, Pascal sm_61 non supporté CUDA 13.x)
+# Modèle  : ggml-large-v3-turbo.bin (~1.6 Go)
+# Systemd : whisper-server.service sur gpu-worker-1060
+#
+# Ce manifest expose le service systemd au reste du cluster via
+# un Service + Endpoints pointant sur l'IP interne du noeud.
+#
+# API compatible OpenAI sur le port 9000
+#   POST /inference          — transcription (form: file, language)
+#   POST /v1/audio/transcriptions — alias OpenAI-compatible
+##############################################################################
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: whisper-server
+  namespace: ai-stack
+  labels:
+    app: whisper-server
+    component: stt
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 9000
+      targetPort: 9000
+      protocol: TCP
+
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: whisper-server
+  namespace: ai-stack
+subsets:
+  - addresses:
+      - ip: 100.64.0.5   # gpu-worker-1060 (IP Headscale/VPN interne)
+    ports:
+      - name: http
+        port: 9000
+        protocol: TCP
