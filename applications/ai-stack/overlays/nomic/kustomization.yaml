@@ -8,8 +8,22 @@ labels:
 namePrefix: nomic-
 
 configMapGenerator:
-- name: llm-server-config
-  literals:
-    - MODEL_PATH="/models/nomic-embed-text-v1.5.Q8_0.gguf"
-    - CTX_SIZE="2048"
-    - PARALLEL_SLOTS="4"
+  - name: llm-server-config
+    literals:
+      - MODEL_PATH="/models/nomic-embed-text-v1.5.Q8_0.gguf"
+      - MAX_MODEL_LEN="2048"
+      - MAX_NUM_SEQS="16"
+      # Embeddings : faible besoin KV cache, laisser de la place aux autres
+      - GPU_MEMORY_UTILIZATION="0.12"
+
+patches:
+  - target:
+      kind: Deployment
+      name: llm-server
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: '--task'
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: 'embed'

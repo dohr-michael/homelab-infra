@@ -12,17 +12,8 @@ configMapGenerator:
   - name: llm-server-config
     literals:
       - MODEL_PATH="/models/gemma-4-26B-A4B-it-Q4_K_M.gguf"
-      - CTX_SIZE="262144"
-      - PARALLEL_SLOTS="2"
-
-# patches:
-#   - target:
-#       kind: Deployment
-#       name: llm-server
-#     patch: |-
-#       - op: add
-#         path: /spec/template/spec/containers/0/args/-
-#         value: '--chat-template'
-#       - op: add
-#         path: /spec/template/spec/containers/0/args/-
-#         value: 'gemma3'
+      - MAX_MODEL_LEN="65536"
+      - MAX_NUM_SEQS="4"
+      # ~0.40 × 64 Go UMA = 25 Go réservés (14 Go poids + 11 Go KV cache)
+      # Ajuster si d'autres modèles vLLM tournent simultanément
+      - GPU_MEMORY_UTILIZATION="0.40"

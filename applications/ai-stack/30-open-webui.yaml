@@ -2,7 +2,7 @@
 # Open WebUI — Interface unifiée LLM + Image Gen
 #
 # Se connecte à :
-#   - llama-server (port 8080) pour le chat LLM via API OpenAI
+#   - gemma4-llm-server (port 8080) pour le chat LLM via API OpenAI
 #   - sd-server (port 8000) pour la génération d'images via ComfyUI
 #
 # Open WebUI peut tourner sur N'IMPORTE QUEL noeud du cluster
@@ -57,13 +57,13 @@ spec:
           imagePullPolicy: Always
 
           env:
-            # ── Connexion au LLM (llama-server, API OpenAI-compatible) ──
+            # ── Connexion au LLM (vLLM, API OpenAI-compatible) ──
             - name: OPENAI_API_BASE_URL
-              value: "http://mistral-llm-server.ai-stack.svc.cluster.local:8080/v1"
+              value: "http://gemma4-llm-server.ai-stack.svc.cluster.local:8080/v1"
             - name: OPENAI_API_KEY
               value: "sk-no-key-required"
 
-            # ── Désactiver Ollama (on utilise llama-server directement) ──
+            # ── Désactiver Ollama (on utilise vLLM directement) ──
             - name: OLLAMA_BASE_URL
               value: ""
 
@@ -75,15 +75,15 @@ spec:
             - name: IMAGE_GENERATION_ENGINE
               value: "comfyui"
 
-            # ── STT (whisper-server sur gpu-worker-1060) ──────────
+            # ── STT (voxtral-server sur Strix Halo, vLLM) ────────
             - name: AUDIO_STT_ENGINE
               value: "openai"
             - name: AUDIO_STT_OPENAI_API_BASE_URL
-              value: "http://whisper-server.ai-stack.svc.cluster.local:9000"
+              value: "http://voxtral-server.ai-stack.svc.cluster.local:9001"
             - name: AUDIO_STT_OPENAI_API_KEY
               value: "sk-no-key-required"
             - name: AUDIO_STT_MODEL
-              value: "whisper-1"
+              value: "voxtral-mini-3b"
 
             # ── Divers ──
             - name: WEBUI_AUTH

@@ -4,11 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Homelab infrastructure on K3S — AI/ML stack (LLM + image gen) on AMD Strix Halo (gfx1151/Vulkan), managed via ArgoCD GitOps.
+Homelab infrastructure on K3S — AI/ML stack (LLM + image gen) on AMD Strix Halo (gfx1151/ROCm), managed via ArgoCD GitOps.
 
 ## Architecture
 
-- **4-node K3S cluster**: 2 VPS control-planes, 1 Strix Halo GPU agent, 1 GTX1060 agent
+- **4-node K3S cluster**: 2 VPS control-planes, 1 Strix Halo GPU agent (`gmk-ai-master`), 1 GTX1060 agent
+- **GTX 1060 node**: hors K3S — services systemd (ex: `whisper-server.service`), exposés au cluster via `Service` headless + `Endpoints` pointant sur l'IP Headscale du noeud (ex: `100.64.0.5`)
 - **ArgoCD** (`argocd/`): GitOps controller, deployed via `kubectl apply -k argocd/`
 - **ApplicationSet**: auto-discovers apps in `applications/*/` and deploys them
 - **Secrets**: SOPS + age encryption, decrypted at deploy time by a KSOPS CMP sidecar on the ArgoCD repo-server
@@ -60,9 +61,44 @@ kubectl kustomize argocd/
 KUBECONFIG=~/.kube/home.dohrm kubectl ...
 ```
 
-## Strix Halo Requirements
+## AI Stack — Structure LLM
 
-- Kernel ≥ 6.18.4, firmware ≥ 20260110 (avoid 20251125)
-- `--no-mmap` and `-fa` (flash attention) are mandatory for llama-server on gfx1151
-- Models stored on-node at `/srv/ai-models/{llm,diffusion}`
-- BIOS UMA: allocate max GPU memory (~64-88 Go)
+Le LLM est déployé via un pattern **base + overlays** :
+
+- `applications/ai-stack/base/llm.yaml` : Deployment/Service template générique
+- `applications/ai-stack/overlays/<model>/` : 1 overlay = 1 modèle déployé, avec son propre `ConfigMap` (`MODEL_PATH`, `CTX_SIZE`, `PARALLEL_SLOTS`)
+- Les overlays sont référencés dans `applications/ai-stack/kustomization.yaml` sous `resources:`
+
+Actuellement déployés : `overlays/gemma4` (Gemma 4 26B), `overlays/nomic` (embeddings).
+
+Pour ajouter un modèle : créer un nouvel overlay avec `namePrefix`, `labels.app`, et le `configMapGenerator` correspondant.
+
+## Strix Halo — Backend GPU
+
+- **LLM** : ROCm — image `kyuz0/amd-strix-halo-toolboxes:rocm-7.2`, accès `/dev/dri` + `/dev/kfd`
+- **Image gen (sd-server)** : Vulkan — image custom buildée depuis `Dockerfile.sd-cpp`, accès `/dev/dri`
+- `securityContext: privileged: true, runAsUser: 0` **obligatoire** pour ROCm (SELinux bloque les allocations mémoire HSA)
+- Modèles stockés sur le noeud : `/srv/ai-models/{llm,diffusion}`
+
+### Flags llama-server obligatoires sur gfx1151
+
+- `--no-mmap` : évite les crashs mmap sur gfx1151
+- `-fa 1` : flash attention (performances)
+- `-ngl 999` : offload tous les layers GPU
+
+### Mémoire GPU (UMA unifiée)
+
+| Source | Taille | Config |
+|--------|--------|--------|
+| VRAM UMA (BIOS) | ~48 Go | Allouer le max dans le BIOS |
+| GTT (GRUB) | ~124 Go | `amdgpu.gttsize=126976 ttm.pages_limit=32505856` |
+| **Total accessible GPU** | **~172 Go** | Limité par RAM physique |
+
+Params GRUB à ajouter dans `GRUB_CMDLINE_LINUX` : `amd_iommu=off amdgpu.gttsize=126976 ttm.pages_limit=32505856`
+
+Voir `infra/strix-halo-gpu-memory.md` pour la procédure complète.
+
+### Kernel et firmware
+
+- Kernel ≥ 6.18.4 (bug gfx1151 sur les versions antérieures)
+- Firmware ≥ 20260110 — **NE PAS utiliser** `linux-firmware-20251125` (casse ROCm/Vulkan)

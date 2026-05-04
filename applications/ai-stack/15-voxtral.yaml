@@ -1,46 +1,38 @@
 ##############################################################################
-# llm-server (ROCm / vLLM)
+# Voxtral STT Server — Transcription audio + compréhension audio
 #
-# Image  : kyuz0/vllm-therock-gfx1151:stable
-# Backend: ROCm, patches AITER gfx1151 inclus dans l'image
+# Modèle : mistralai/Voxtral-Mini-3B-2507 (~10 Go VRAM, format HF)
+# Backend : vLLM (kyuz0/vllm-therock-gfx1151:stable) sur Strix Halo
 #
-# API compatible OpenAI sur le port 8080
-# Utilisé via le pattern overlay : 1 overlay = 1 modèle déployé
+# Prérequis sur le noeud :
+#   huggingface-cli download mistralai/Voxtral-Mini-3B-2507 \
+#     --local-dir /srv/ai-models/llm/voxtral-mini-3b/
+#
+# API compatible OpenAI sur le port 9001
+#   POST /v1/audio/transcriptions — transcription (OpenAI-compatible)
 ##############################################################################
-
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: llm-server-internal-config
-  namespace: ai-stack
-data:
-  # Clés fixes — surchargées par overlay via llm-server-config
-  HOST: "0.0.0.0"
-  PORT: "8080"
-  DTYPE: "auto"
 
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: llm-server
+  name: voxtral-server
   namespace: ai-stack
   labels:
-    app: llm-server
-    component: llm
+    app: voxtral-server
+    component: stt
 spec:
   replicas: 1
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app: llm-server
+      app: voxtral-server
   template:
     metadata:
       labels:
-        app: llm-server
-        component: llm
+        app: voxtral-server
+        component: stt
     spec:
       tolerations:
         - key: "dedicated"
@@ -56,54 +48,49 @@ spec:
           command: ["sh", "-c"]
           args:
             - |
-              echo "Checking model: $(MODEL_PATH)"
-              if [ ! -e "$(MODEL_PATH)" ]; then
-                echo "ERROR: not found: $(MODEL_PATH)"
-                ls -lh /models/ 2>/dev/null || echo "  (empty)"
+              MODEL=/models/voxtral-mini-3b
+              echo "Checking model directory: $MODEL"
+              if [ ! -d "$MODEL" ]; then
+                echo "ERROR: $MODEL not found"
+                echo "Run: huggingface-cli download mistralai/Voxtral-Mini-3B-2507 --local-dir /srv/ai-models/llm/voxtral-mini-3b/"
                 exit 1
               fi
-              echo "OK: $(du -sh "$(MODEL_PATH)" | cut -f1)"
-          envFrom:
-            - configMapRef:
-                name: llm-server-config
+              echo "OK: $(du -sh $MODEL | cut -f1)"
           volumeMounts:
             - name: models
               mountPath: /models
               readOnly: true
 
       containers:
-        - name: llm-server
+        - name: voxtral-server
           image: docker.io/kyuz0/vllm-therock-gfx1151:stable
           imagePullPolicy: Always
 
           command: ["vllm", "serve"]
           args:
-            - "$(MODEL_PATH)"
+            - "/models/voxtral-mini-3b"
             - "--host"
-            - "$(HOST)"
+            - "0.0.0.0"
             - "--port"
-            - "$(PORT)"
+            - "9001"
             - "--dtype"
-            - "$(DTYPE)"
+            - "auto"
             - "--gpu-memory-utilization"
-            - "$(GPU_MEMORY_UTILIZATION)"
+            - "0.15"
             - "--max-model-len"
-            - "$(MAX_MODEL_LEN)"
-            - "--max-num-seqs"
-            - "$(MAX_NUM_SEQS)"
-            - "--quantization"
-            - "gguf"
-            - "--trust-remote-code"
-
-          envFrom:
-            - configMapRef:
-                name: llm-server-config
-            - configMapRef:
-                name: llm-server-internal-config
+            - "32768"
+            - "--tokenizer_mode"
+            - "mistral"
+            - "--config_format"
+            - "mistral"
+            - "--load_format"
+            - "mistral"
+            - "--served-model-name"
+            - "voxtral-mini-3b"
 
           ports:
             - name: http
-              containerPort: 8080
+              containerPort: 9001
               protocol: TCP
 
           volumeMounts:
@@ -115,14 +102,13 @@ spec:
               mountPath: /models
               readOnly: true
 
-          # vLLM compile des kernels au premier démarrage → startup lent
           startupProbe:
             httpGet:
               path: /health
               port: http
             initialDelaySeconds: 60
             periodSeconds: 15
-            failureThreshold: 60
+            failureThreshold: 40
             timeoutSeconds: 10
 
           readinessProbe:
@@ -142,11 +128,11 @@ spec:
 
           resources:
             requests:
-              cpu: "4"
-              memory: "8Gi"
+              cpu: "2"
+              memory: "4Gi"
             limits:
-              cpu: "16"
-              memory: "32Gi"
+              cpu: "8"
+              memory: "16Gi"
 
           # privileged requis : SELinux bloque les allocations mémoire HSA de ROCm
           securityContext:
@@ -170,16 +156,17 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: llm-server
+  name: voxtral-server
   namespace: ai-stack
   labels:
-    app: llm-server
+    app: voxtral-server
+    component: stt
 spec:
   type: ClusterIP
   selector:
-    app: llm-server
+    app: voxtral-server
   ports:
     - name: http
-      port: 8080
+      port: 9001
       targetPort: http
       protocol: TCP
