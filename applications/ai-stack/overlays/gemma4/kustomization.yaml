@@ -8,11 +8,11 @@ labels:
 
 namePrefix: gemma4-
 
-# Modèle : cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit (~13-14 Go)
-# AWQ 4-bit confirmé supporté sur AMD ROCm gfx1151 (kyuz0)
+# Modèle : cyankiwi/gemma-4-26B-A4B-it-AWQ-8bit (~27 Go)
+# AWQ 8-bit — meilleure qualité, tient dans 64 Go UMA
 #
 # Téléchargement :
-#   huggingface-cli download cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit \
+#   huggingface-cli download cyankiwi/gemma-4-26B-A4B-it-AWQ-8bit \
 #     --local-dir /srv/ai-models/llm/gemma-4-26b-awq/
 
 configMapGenerator:
@@ -21,7 +21,7 @@ configMapGenerator:
       - MODEL_PATH="/models/gemma-4-26b-awq"
       - MAX_MODEL_LEN="65536"
       - MAX_NUM_SEQS="4"
-      - GPU_MEMORY_UTILIZATION="0.35"
+      - GPU_MEMORY_UTILIZATION="0.55"
 
 patches:
   - target:
