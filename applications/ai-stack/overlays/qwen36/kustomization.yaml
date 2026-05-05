@@ -1,0 +1,23 @@
+resources:
+  - ../../base
+
+labels:
+  - includeSelectors: true
+    pairs:
+      app: qwen36-35b
+
+namePrefix: qwen36-
+
+# Modèle : Qwen/Qwen3.6-35B-A3B-FP8 (FP8 officiel Alibaba, ~17 Go)
+# Téléchargement :
+#   huggingface-cli download Qwen/Qwen3.6-35B-A3B-FP8 \
+#     --local-dir /srv/ai-models/llm/qwen3.6-35b-fp8/
+
+configMapGenerator:
+  - name: llm-server-config
+    literals:
+      - MODEL_PATH="/models/qwen3.6-35b-fp8"
+      - MAX_MODEL_LEN="32768"
+      - MAX_NUM_SEQS="4"
+      # ~17 Go poids FP8 + KV cache — 0.40 × 64 Go UMA = 25.6 Go réservés
+      - GPU_MEMORY_UTILIZATION="0.40"

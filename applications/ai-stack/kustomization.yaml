@@ -8,7 +8,7 @@ resources:
   - 01-storage.yaml
   - 10-whisper.yaml
   - 15-voxtral.yaml
-  - overlays/gemma4
+  - overlays/qwen36
   - overlays/nomic
   - 20-sd-server.yaml
   - 30-open-webui.yaml
