@@ -1,0 +1,36 @@
+resources:
+  - ../../base
+
+labels:
+  - includeSelectors: true
+    pairs:
+      app: gemma4-26b
+
+namePrefix: gemma4-
+
+# Modèle : cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit (~13-14 Go)
+# AWQ 4-bit confirmé supporté sur AMD ROCm gfx1151 (kyuz0)
+#
+# Téléchargement :
+#   huggingface-cli download cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit \
+#     --local-dir /srv/ai-models/llm/gemma-4-26b-awq/
+
+configMapGenerator:
+  - name: llm-server-config
+    literals:
+      - MODEL_PATH="/models/gemma-4-26b-awq"
+      - MAX_MODEL_LEN="65536"
+      - MAX_NUM_SEQS="4"
+      - GPU_MEMORY_UTILIZATION="0.35"
+
+patches:
+  - target:
+      kind: Deployment
+      name: llm-server
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: '--quantization'
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: 'awq'
