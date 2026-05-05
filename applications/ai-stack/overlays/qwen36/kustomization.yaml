@@ -8,16 +8,20 @@ labels:
 
 namePrefix: qwen36-
 
-# Modèle : Qwen/Qwen3.6-35B-A3B-FP8 (FP8 officiel Alibaba, ~17 Go)
+# Modèle : Qwen/Qwen3.6-35B-A3B (BF16, ~70 Go)
+# FP8 non supporté sur AMD ROCm gfx1151 (Fp8MoEMethod non implémenté)
+#
 # Téléchargement :
-#   huggingface-cli download Qwen/Qwen3.6-35B-A3B-FP8 \
-#     --local-dir /srv/ai-models/llm/qwen3.6-35b-fp8/
+#   huggingface-cli download Qwen/Qwen3.6-35B-A3B \
+#     --local-dir /srv/ai-models/llm/qwen3.6-35b/
+#
+# Mémoire : UMA 48 Go + GTT 124 Go = ~172 Go accessibles au GPU
+# BF16 35B ≈ 70 Go poids → GPU_MEMORY_UTILIZATION=0.50 × 172 Go = 86 Go
 
 configMapGenerator:
   - name: llm-server-config
     literals:
-      - MODEL_PATH="/models/qwen3.6-35b-fp8"
+      - MODEL_PATH="/models/qwen3.6-35b"
       - MAX_MODEL_LEN="32768"
       - MAX_NUM_SEQS="4"
-      # ~17 Go poids FP8 + KV cache — 0.40 × 64 Go UMA = 25.6 Go réservés
-      - GPU_MEMORY_UTILIZATION="0.40"
+      - GPU_MEMORY_UTILIZATION="0.50"
