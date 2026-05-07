@@ -1,11 +1,10 @@
 ##############################################################################
-# llm-server (ROCm / vLLM)
+# llm-server (ROCm)
 #
-# Image  : kyuz0/vllm-therock-gfx1151:stable
-# Backend: ROCm, patches AITER gfx1151 inclus dans l'image
+# Image : kyuz0/amd-strix-halo-toolboxes:rocm-6.4.4
+# Backend : ROCm 6.4.4 (AMD native GPU compute)
 #
 # API compatible OpenAI sur le port 8080
-# Utilisé via le pattern overlay : 1 overlay = 1 modèle déployé
 ##############################################################################
 
 ---
@@ -15,10 +14,15 @@ metadata:
   name: llm-server-internal-config
   namespace: ai-stack
 data:
-  # Clés fixes — surchargées par overlay via llm-server-config
+  # ── Paramètres inférence ────────────────────────────────────
+  # -ngl 999 : offload tous les layers sur GPU
+  # -fa      : flash attention (OBLIGATOIRE sur Strix Halo)
+  # -c       : taille du contexte
+  # -np      : nombre de slots parallèles
+  # --no-mmap: évite les crashs mmap sur gfx1151
   HOST: "0.0.0.0"
   PORT: "8080"
-  DTYPE: "auto"
+  N_GPU_LAYERS: "999"
 
 ---
 apiVersion: apps/v1
@@ -32,7 +36,7 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate
+    type: Recreate # GPU partagé, pas de rolling update
   selector:
     matchLabels:
       app: llm-server
@@ -42,6 +46,7 @@ spec:
         app: llm-server
         component: llm
     spec:
+      # ── Scheduling sur le noeud Strix Halo ────────────────
       tolerations:
         - key: "dedicated"
           operator: "Equal"
@@ -50,19 +55,21 @@ spec:
       nodeSelector:
         gpu-type: "strix-halo"
 
+      # ── Validation des modèles ──────────────────────────────
       initContainers:
         - name: check-model
           image: busybox:1.37
           command: ["sh", "-c"]
           args:
             - |
-              echo "Checking model: $(MODEL_PATH)"
-              if [ ! -e "$(MODEL_PATH)" ]; then
-                echo "ERROR: not found: $(MODEL_PATH)"
-                ls -lh /models/ 2>/dev/null || echo "  (empty)"
+              echo "Checking model file: $(MODEL_PATH)"
+              if [ ! -f "$(MODEL_PATH)" ]; then
+                echo "ERROR: Model file not found: $(MODEL_PATH)"
+                echo "Available files in /models:"
+                ls -lh /models/ 2>/dev/null || echo "  (directory empty or missing)"
                 exit 1
               fi
-              echo "OK: $(du -sh "$(MODEL_PATH)" | cut -f1)"
+              echo "OK: Model file found ($(du -h "$(MODEL_PATH)" | cut -f1))"
           envFrom:
             - configMapRef:
                 name: llm-server-config
@@ -71,27 +78,31 @@ spec:
               mountPath: /models
               readOnly: true
 
+      # ── Conteneur principal ────────────────────────────────
       containers:
         - name: llm-server
-          image: docker.io/kyuz0/vllm-therock-gfx1151:stable
+          image: docker.io/kyuz0/amd-strix-halo-toolboxes:rocm-7.2
           imagePullPolicy: Always
 
-          command: ["vllm", "serve"]
+          command: ["llama-server"]
           args:
+            - "-m"
             - "$(MODEL_PATH)"
             - "--host"
             - "$(HOST)"
             - "--port"
             - "$(PORT)"
-            - "--dtype"
-            - "$(DTYPE)"
-            - "--gpu-memory-utilization"
-            - "$(GPU_MEMORY_UTILIZATION)"
-            - "--max-model-len"
-            - "$(MAX_MODEL_LEN)"
-            - "--max-num-seqs"
-            - "$(MAX_NUM_SEQS)"
-            - "--trust-remote-code"
+            - "-ngl"
+            - "$(N_GPU_LAYERS)"
+            - "-fa"
+            - "1"
+            - "-c"
+            - "$(CTX_SIZE)"
+            - "-np"
+            - "$(PARALLEL_SLOTS)"
+            - "--no-mmap"
+            - "-fit"
+            - "off"
 
           envFrom:
             - configMapRef:
@@ -104,6 +115,8 @@ spec:
               containerPort: 8080
               protocol: TCP
 
+          # ── Accès GPU ROCm ─────────────────────────────────
+          # /dev/dri + /dev/kfd requis par ROCm
           volumeMounts:
             - name: dri
               mountPath: /dev/dri
@@ -113,44 +126,47 @@ spec:
               mountPath: /models
               readOnly: true
 
-          # vLLM compile des kernels au premier démarrage → startup lent
+          # ── Santé ──────────────────────────────────────────
           startupProbe:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 60
-            periodSeconds: 15
-            failureThreshold: 60
-            timeoutSeconds: 10
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 30 # Jusqu'à 5 min pour charger le modèle
+            timeoutSeconds: 5
 
           readinessProbe:
             httpGet:
               path: /health
               port: http
             periodSeconds: 15
-            timeoutSeconds: 10
+            timeoutSeconds: 5
 
           livenessProbe:
             httpGet:
               path: /health
               port: http
             periodSeconds: 30
-            timeoutSeconds: 10
+            timeoutSeconds: 5
             failureThreshold: 3
 
+          # ── Ressources ─────────────────────────────────────
           resources:
             requests:
-              cpu: "4"
-              memory: "8Gi"
+              cpu: "2"
+              memory: "4Gi"
             limits:
-              cpu: "16"
-              memory: "32Gi"
+              cpu: "8"
+              memory: "16Gi"
 
+          # ── Sécurité ───────────────────────────────────────
           # privileged requis : SELinux bloque les allocations mémoire HSA de ROCm
           securityContext:
             privileged: true
             runAsUser: 0
 
+      # ── Volumes ──────────────────────────────────────────
       volumes:
         - name: dri
           hostPath:

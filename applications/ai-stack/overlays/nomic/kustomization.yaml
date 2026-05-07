@@ -7,18 +7,9 @@ labels:
       app: nomic-embed
 namePrefix: nomic-
 
-# Modèle : nomic-ai/nomic-embed-text-v1.5 (HF safetensors)
-# Téléchargement :
-#   huggingface-cli download nomic-ai/nomic-embed-text-v1.5 \
-#     --local-dir /srv/ai-models/llm/nomic-embed-text-v1.5/
-#
-# --task embed non supporté dans cette version de vLLM (0.19.x)
-# vLLM auto-détecte le modèle d'embedding depuis l'architecture
-
 configMapGenerator:
-  - name: llm-server-config
-    literals:
-      - MODEL_PATH="/models/nomic-embed-text-v1.5"
-      - MAX_MODEL_LEN="2048"
-      - MAX_NUM_SEQS="32"
-      - GPU_MEMORY_UTILIZATION="0.05"
+- name: llm-server-config
+  literals:
+    - MODEL_PATH="/models/nomic-embed-text-v1.5.Q8_0.gguf"
+    - CTX_SIZE="2048"
+    - PARALLEL_SLOTS="4"

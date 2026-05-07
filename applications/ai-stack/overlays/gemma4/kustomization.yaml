@@ -8,29 +8,21 @@ labels:
 
 namePrefix: gemma4-
 
-# Modèle : cyankiwi/gemma-4-26B-A4B-it-AWQ-8bit (~27 Go)
-# AWQ 8-bit — meilleure qualité, tient dans 64 Go UMA
-#
-# Téléchargement :
-#   huggingface-cli download cyankiwi/gemma-4-26B-A4B-it-AWQ-8bit \
-#     --local-dir /srv/ai-models/llm/gemma-4-26b-awq/
-
 configMapGenerator:
   - name: llm-server-config
     literals:
-      - MODEL_PATH="/models/gemma-4-26b-awq"
-      - MAX_MODEL_LEN="65536"
-      - MAX_NUM_SEQS="4"
-      - GPU_MEMORY_UTILIZATION="0.55"
+      - MODEL_PATH="/models/gemma-4-26B-A4B-it-Q4_K_M.gguf"
+      - CTX_SIZE="262144"
+      - PARALLEL_SLOTS="2"
 
-patches:
-  - target:
-      kind: Deployment
-      name: llm-server
-    patch: |-
-      - op: add
-        path: /spec/template/spec/containers/0/args/-
-        value: '--quantization'
-      - op: add
-        path: /spec/template/spec/containers/0/args/-
-        value: 'awq'
+# patches:
+#   - target:
+#       kind: Deployment
+#       name: llm-server
+#     patch: |-
+#       - op: add
+#         path: /spec/template/spec/containers/0/args/-
+#         value: '--chat-template'
+#       - op: add
+#         path: /spec/template/spec/containers/0/args/-
+#         value: 'gemma3'
