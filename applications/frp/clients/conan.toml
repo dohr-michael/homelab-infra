@@ -10,7 +10,7 @@ auth.method = "token"
 auth.token = "${FRP_TOKEN}"
 
 log.to = "/dev/stdout"
-log.level = "info"
+log.level = "debug"
 
 [[proxies]]
 name = "conan-game-udp"
