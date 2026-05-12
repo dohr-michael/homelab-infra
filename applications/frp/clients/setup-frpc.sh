@@ -11,8 +11,8 @@ set -euo pipefail
 GAME="${1:-}"
 FRP_VERSION="0.62.1"
 ARCH="$(uname -m)"
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 CLIENTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(git -C "$CLIENTS_DIR" rev-parse --show-toplevel)"
 
 # --- validation ---
 if [[ -z "$GAME" ]]; then
