@@ -1,0 +1,76 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frps-config
+  namespace: frp
+data:
+  frps.toml: |
+    bindAddr = "0.0.0.0"
+    bindPort = 7000
+
+    auth.method = "token"
+    auth.token = "{{ .Envs.FRP_TOKEN }}"
+
+    log.to = "stdout"
+    log.level = "info"
+
+    # Ports autorisés pour les proxies frpc (à étendre selon les jeux)
+    allowPorts = [
+    #   { single = 25565 },   # Minecraft TCP
+    #   { single = 19132 },   # Minecraft Bedrock UDP
+      { single = 7777 },    # Conan Exiles / Valheim UDP
+    #   { single = 27015 },   # Source engine (CS, Rust, ...) UDP
+    ]
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frps
+  namespace: frp
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: frps
+  template:
+    metadata:
+      labels:
+        app: frps
+    spec:
+      # Bind directement sur le réseau du VPS — frps peut ouvrir n'importe quel port
+      # sans avoir à les déclarer dans un Service K8s
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+        kubernetes.io/hostname: vps-a7c3e9b8
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: frps
+          image: fatedier/frps:v0.62.1
+          args: ["-c", "/etc/frp/frps.toml"]
+          env:
+            - name: FRP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: frp-token
+                  key: token
+          volumeMounts:
+            - name: config
+              mountPath: /etc/frp
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      volumes:
+        - name: config
+          configMap:
+            name: frps-config

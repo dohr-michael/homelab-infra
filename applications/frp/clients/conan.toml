@@ -1,0 +1,29 @@
+# frpc — Conan Exiles
+# Déployer sur la machine de jeu :
+#   sudo cp conan.toml /etc/frp/frpc.toml
+#   sudo systemctl enable --now frpc
+
+serverAddr = "${FRP_SERVER}"
+serverPort = 7000
+
+auth.method = "token"
+auth.token = "${FRP_TOKEN}"
+
+log.to = "stdout"
+log.level = "info"
+
+[[proxies]]
+name = "conan-game"
+type = "udp"
+localIP = "127.0.0.1"
+localPort = 7777
+remotePort = 7777
+# → conan.dohrm.fr:7777
+
+[[proxies]]
+name = "conan-query"
+type = "udp"
+localIP = "127.0.0.1"
+localPort = 27015
+remotePort = 27015
+# → conan.dohrm.fr:27015 (Steam query)

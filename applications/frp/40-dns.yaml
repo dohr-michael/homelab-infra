@@ -1,0 +1,36 @@
+# Services DNS-only — pas de routage K8s, uniquement pour déclencher external-dns.
+#
+# external-dns lit l'annotation "hostname" et crée un record A sur OVH DNS
+# pointant vers le VPS (51.178.19.49) où frps écoute en hostNetwork.
+#
+# Ajouter un jeu = copier un bloc Service avec le bon hostname.
+
+---
+# Conan Exiles — UDP 7777 / 27015
+apiVersion: v1
+kind: Service
+metadata:
+  name: dns-conan
+  namespace: frp
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: conan.dohrm.fr
+    external-dns.alpha.kubernetes.io/target: 51.178.19.49
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector: {}
+
+---
+# Minecraft Java — TCP 25565
+apiVersion: v1
+kind: Service
+metadata:
+  name: dns-minecraft
+  namespace: frp
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: minecraft.dohrm.fr
+    external-dns.alpha.kubernetes.io/target: 51.178.19.49
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector: {}

@@ -1,0 +1,21 @@
+# frpc — Minecraft Java Edition
+# Déployer sur la machine de jeu :
+#   sudo cp minecraft.toml /etc/frp/frpc.toml
+#   sudo systemctl enable --now frpc
+
+serverAddr = "${FRP_SERVER}"
+serverPort = 7000
+
+auth.method = "token"
+auth.token = "${FRP_TOKEN}"
+
+log.to = "stdout"
+log.level = "info"
+
+[[proxies]]
+name = "minecraft-tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 25565
+remotePort = 25565
+# → minecraft.dohrm.fr:25565

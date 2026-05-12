@@ -29,6 +29,7 @@ spec:
           image: registry.k8s.io/external-dns/external-dns:v0.15.1
           args:
             - --source=ingress
+            - --source=service
             - --provider=ovh
             - --domain-filter=dohrm.fr
             - --default-targets=51.178.19.49
