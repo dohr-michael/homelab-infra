@@ -12,7 +12,7 @@ data:
     auth.method = "token"
     auth.token = "{{ .Envs.FRP_TOKEN }}"
 
-    log.to = "stdout"
+    log.to = "/dev/stdout"
     log.level = "info"
 
     # Ports autorisés pour les proxies frpc (à étendre selon les jeux)

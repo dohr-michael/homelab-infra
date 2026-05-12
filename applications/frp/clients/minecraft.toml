@@ -9,7 +9,7 @@ serverPort = 7000
 auth.method = "token"
 auth.token = "${FRP_TOKEN}"
 
-log.to = "stdout"
+log.to = "/dev/stdout"
 log.level = "info"
 
 [[proxies]]
