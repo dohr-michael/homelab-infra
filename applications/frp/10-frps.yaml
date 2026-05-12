@@ -20,7 +20,7 @@ data:
     #   { single = 25565 },   # Minecraft TCP
     #   { single = 19132 },   # Minecraft Bedrock UDP
       { single = 7777 },    # Conan Exiles / Valheim UDP
-    #   { single = 27015 },   # Source engine (CS, Rust, ...) UDP
+      { single = 27015 },   # Source engine (CS, Rust, ...) UDP
     ]
 
 ---
