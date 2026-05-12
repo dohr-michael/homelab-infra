@@ -13,7 +13,7 @@ log.to = "/dev/stdout"
 log.level = "info"
 
 [[proxies]]
-name = "conan-game"
+name = "conan-game-udp"
 type = "udp"
 localIP = "127.0.0.1"
 localPort = 7777
@@ -21,7 +21,7 @@ remotePort = 7777
 # → conan.dohrm.fr:7777
 
 [[proxies]]
-name = "conan-game"
+name = "conan-game-tcp"
 type = "tcp"
 localIP = "127.0.0.1"
 localPort = 7777
