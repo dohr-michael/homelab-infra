@@ -29,6 +29,14 @@ remotePort = 7777
 # → conan.dohrm.fr:7777
 
 [[proxies]]
+name = "conan-pinger"
+type = "udp"
+localIP = "127.0.0.1"
+localPort = 7778
+remotePort = 7778
+# → conan.dohrm.fr:7778 (pinger)
+
+[[proxies]]
 name = "conan-query"
 type = "udp"
 localIP = "127.0.0.1"
