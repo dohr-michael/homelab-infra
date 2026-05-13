@@ -21,6 +21,7 @@ data:
     #   { single = 19132 },   # Minecraft Bedrock UDP
       { single = 7777 },    # Conan Exiles / Valheim UDP
       { single = 7778 },    # Conan Exiles pinger UDP
+      { single = 25575 },   # Conan Exiles RCON Port
       { single = 27015 },   # Source engine (CS, Rust, ...) UDP
     ]
 

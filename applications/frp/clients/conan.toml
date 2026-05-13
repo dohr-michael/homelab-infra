@@ -42,4 +42,11 @@ type = "udp"
 localIP = "127.0.0.1"
 localPort = 27015
 remotePort = 27015
-# → conan.dohrm.fr:27015 (Steam query)
+
+[[proxies]]
+name = "conan-rcon"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 25575
+remotePort = 25575
+# → conan.dohrm.fr:25575 (Steam query)
