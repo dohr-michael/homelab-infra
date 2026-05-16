@@ -1,0 +1,72 @@
+##############################################################################
+# LLM servers — exposés via Service + Endpoints (pattern headless)
+#
+# Les serveurs tournent directement sur gmk-ai-master (Strix Halo).
+# K8s route le trafic sans gérer de pod.
+#
+# Ports sur le nœud :
+#   8080 — LLM principal (gemma4, vllm, ou autre llama-server)
+#   8081 — Embedding (nomic, ou autre modèle d'embedding)
+##############################################################################
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gemma4-llm-server
+  namespace: ai-stack
+  labels:
+    app: gemma4-llm-server
+    component: llm
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: gemma4-llm-server
+  namespace: ai-stack
+subsets:
+  - addresses:
+      - ip: 100.64.0.4   # gmk-ai-master (IP Headscale)
+    ports:
+      - name: http
+        port: 8080
+        protocol: TCP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nomic-llm-server
+  namespace: ai-stack
+  labels:
+    app: nomic-llm-server
+    component: embedding
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8081
+      protocol: TCP
+
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: nomic-llm-server
+  namespace: ai-stack
+subsets:
+  - addresses:
+      - ip: 100.64.0.4   # gmk-ai-master (IP Headscale)
+    ports:
+      - name: http
+        port: 8081
+        protocol: TCP

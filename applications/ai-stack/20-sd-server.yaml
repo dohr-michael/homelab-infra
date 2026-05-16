@@ -1,208 +1,11 @@
 ##############################################################################
-# ComfyUI (ROCm) — Génération image-to-video
+# ComfyUI — exposé via Service + Endpoints (pattern headless)
 #
-# Image : kyuz0/amd-strix-halo-comfyui:latest
-# Backend : ROCm 7 (AMD native GPU compute)
-# Modèles :
-#   - LTX-2.3 22B distilled (~46 Go) : image-to-video Lightricks
+# ComfyUI tourne directement sur gmk-ai-master (Strix Halo).
+# K8s route le trafic sans gérer de pod.
 #
-# Interface ComfyUI sur le port 8000
+# Port sur le nœud : 8000
 ##############################################################################
-
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: sd-server
-  namespace: ai-stack
-  labels:
-    app: sd-server
-    component: image-gen
-spec:
-  replicas: 1
-  strategy:
-    type: Recreate
-  selector:
-    matchLabels:
-      app: sd-server
-  template:
-    metadata:
-      labels:
-        app: sd-server
-        component: image-gen
-    spec:
-      # ── Scheduling sur le noeud Strix Halo ────────────────
-      tolerations:
-        - key: "dedicated"
-          operator: "Equal"
-          value: "ai"
-          effect: "NoSchedule"
-      nodeSelector:
-        gpu-type: "strix-halo"
-
-      # ── Init : custom nodes ───────────────────────────────
-      # Copie les nodes baked-in, clone ComfyUI-LTXVideo,
-      # installe les pip deps dans .packages/ (partagé via PYTHONPATH)
-      initContainers:
-        - name: setup-custom-nodes
-          image: docker.io/kyuz0/amd-strix-halo-comfyui:latest
-          imagePullPolicy: Always
-          command: ["/bin/bash", "-c"]
-          args:
-            - |
-              set -e
-              NODES=/mnt/custom_nodes/nodes
-              PACKAGES=/mnt/custom_nodes/packages
-              mkdir -p $NODES $PACKAGES
-
-              if [ ! -f "$NODES/.initialized" ]; then
-                echo "Premier démarrage : copie des nodes baked-in..."
-                cp -r /opt/ComfyUI/custom_nodes/. $NODES/
-                touch $NODES/.initialized
-              fi
-
-              clone_or_update() {
-                local repo=$1 dir=$2
-                if [ ! -d "$NODES/$dir" ]; then
-                  echo "Clonage de $dir..."
-                  git clone --depth 1 $repo $NODES/$dir
-                else
-                  echo "Mise à jour de $dir..."
-                  git -C $NODES/$dir pull --ff-only || true
-                fi
-              }
-
-              clone_or_update https://github.com/Lightricks/ComfyUI-LTXVideo.git ComfyUI-LTXVideo
-
-              # Symlink diffusion_models → checkpoints pour CheckpointLoaderSimple et LTXVGemmaCLIPModelLoader
-              MODELS_DIR=/opt/ComfyUI/models
-              for f in $MODELS_DIR/diffusion_models/*.safetensors; do
-                [ -f "$f" ] || continue
-                ln -sf "$f" "$MODELS_DIR/checkpoints/$(basename $f)" 2>/dev/null || true
-              done
-
-              for req in $(find $NODES -maxdepth 2 -name requirements.txt); do
-                echo "pip install : $req"
-                grep -vE "^(torch|torchvision|torchaudio|nvidia-|triton)" $req \
-                  | pip install --target $PACKAGES/ -q 2>/dev/null || true
-              done
-
-              echo "Custom nodes prêts."
-          volumeMounts:
-            - name: custom-nodes
-              mountPath: /mnt/custom_nodes
-
-      # ── Conteneur principal ────────────────────────────────
-      containers:
-        - name: comfyui
-          image: docker.io/kyuz0/amd-strix-halo-comfyui:latest
-          imagePullPolicy: Always
-
-          workingDir: /opt/ComfyUI
-          command: ["python", "main.py"]
-          args:
-            - "--listen"
-            - "0.0.0.0"
-            - "--port"
-            - "8000"
-            - "--output-directory"
-            - "/outputs"
-            - "--disable-mmap"
-            - "--cache-none"
-            - "--bf16-vae"
-
-          envFrom:
-            - secretRef:
-                name: sd-server-secrets
-          env:
-            - name: PYTHONPATH
-              value: /opt/.pip-packages
-            - name: TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL
-              value: "1"
-            - name: TORCH_BLAS_PREFER_HIPBLASLT
-              value: "1"
-
-          ports:
-            - name: http
-              containerPort: 8000
-              protocol: TCP
-
-          # ── Accès GPU ROCm ─────────────────────────────────
-          # /dev/dri + /dev/kfd requis par ROCm
-          volumeMounts:
-            - name: dri
-              mountPath: /dev/dri
-            - name: kfd
-              mountPath: /dev/kfd
-            - name: models
-              mountPath: /opt/ComfyUI/models
-              readOnly: true
-            - name: custom-nodes
-              mountPath: /opt/ComfyUI/custom_nodes
-              subPath: nodes
-            - name: custom-nodes
-              mountPath: /opt/.pip-packages
-              subPath: packages
-            - name: output
-              mountPath: /outputs
-
-          # ── Santé ──────────────────────────────────────────
-          startupProbe:
-            httpGet:
-              path: /
-              port: http
-            initialDelaySeconds: 15
-            periodSeconds: 10
-            failureThreshold: 30
-            timeoutSeconds: 5
-
-          readinessProbe:
-            httpGet:
-              path: /
-              port: http
-            periodSeconds: 15
-            timeoutSeconds: 5
-
-          livenessProbe:
-            httpGet:
-              path: /
-              port: http
-            periodSeconds: 30
-            timeoutSeconds: 5
-            failureThreshold: 3
-
-          resources:
-            requests:
-              cpu: "1"
-              memory: "4Gi"
-            limits:
-              cpu: "4"
-              memory: "60Gi"
-
-          # ── Sécurité ───────────────────────────────────────
-          # privileged requis : SELinux bloque les allocations mémoire HSA de ROCm
-          securityContext:
-            privileged: true
-            runAsUser: 0
-
-      # ── Volumes ──────────────────────────────────────────
-      volumes:
-        - name: dri
-          hostPath:
-            path: /dev/dri
-            type: Directory
-        - name: kfd
-          hostPath:
-            path: /dev/kfd
-            type: CharDevice
-        - name: models
-          persistentVolumeClaim:
-            claimName: ai-models-diffusion-pvc
-        - name: custom-nodes
-          persistentVolumeClaim:
-            claimName: ai-custom-nodes-pvc
-        - name: output
-          emptyDir: {}
 
 ---
 apiVersion: v1
@@ -212,12 +15,25 @@ metadata:
   namespace: ai-stack
   labels:
     app: sd-server
+    component: image-gen
 spec:
   type: ClusterIP
-  selector:
-    app: sd-server
   ports:
     - name: http
       port: 8000
-      targetPort: http
+      targetPort: 8000
       protocol: TCP
+
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: sd-server
+  namespace: ai-stack
+subsets:
+  - addresses:
+      - ip: 100.64.0.4   # gmk-ai-master (IP Headscale)
+    ports:
+      - name: http
+        port: 8000
+        protocol: TCP
