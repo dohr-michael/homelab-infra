@@ -55,6 +55,20 @@ spec:
             - name: OPENAI_API_KEY
               value: "sk-no-key-required"
 
+            # ── Embeddings RAG (bge-m3 via llama-server) ──────────
+            # NB : open-webui persiste sa config en base ; ces variables ne
+            # font que SEEDER la valeur initiale. Si un endpoint d'embedding
+            # est déjà configuré en base, il faut le mettre à jour à la main :
+            # Admin → Settings → Documents → Embedding.
+            - name: RAG_EMBEDDING_ENGINE
+              value: "openai"
+            - name: RAG_OPENAI_API_BASE_URL
+              value: "http://bge-m3-llm-server.ai-stack.svc.cluster.local:8080/v1"
+            - name: RAG_OPENAI_API_KEY
+              value: "sk-no-key-required"
+            - name: RAG_EMBEDDING_MODEL
+              value: "bge-m3"
+
             # ── Désactiver Ollama (on utilise llama-server directement) ──
             - name: OLLAMA_BASE_URL
               value: ""

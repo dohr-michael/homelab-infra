@@ -62,7 +62,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: nomic-llm-server
+                name: bge-m3-llm-server
                 port:
                   number: 8080
 

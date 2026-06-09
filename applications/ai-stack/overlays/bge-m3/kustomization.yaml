@@ -1,0 +1,26 @@
+resources:
+  - ../../base
+
+labels:
+  - includeSelectors: true
+    pairs:
+      app: bge-m3
+
+namePrefix: bge-m3-
+
+configMapGenerator:
+  - name: llm-server-config
+    literals:
+      - MODEL_PATH="/models/bge-m3-q4_k_m.gguf"
+      - CTX_SIZE="8192"
+      - PARALLEL_SLOTS="4"
+
+# Modèle d'embedding : active explicitement l'endpoint /v1/embeddings
+patches:
+  - target:
+      kind: Deployment
+      name: llm-server
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--embeddings"
