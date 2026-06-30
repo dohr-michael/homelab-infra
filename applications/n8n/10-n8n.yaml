@@ -35,7 +35,7 @@ spec:
       containers:
         - name: n8n
           image: docker.io/n8nio/n8n:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
 
           env:
             # ── Base de données PostgreSQL ───────────────────
