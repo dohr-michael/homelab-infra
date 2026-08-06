@@ -24,23 +24,19 @@ kind: ClusterRole
 metadata:
   name: kube-state-metrics
 rules:
+  # Le RBAC est aligné sur le flag --resources du Deployment : on n'accorde que
+  # ce qui est réellement collecté. `secrets` est volontairement absent (un
+  # `list` renverrait leur contenu) et `endpointslices` aussi, puisqu'on ne les
+  # collecte pas — c'est ce couple qui faisait boucler KSM en erreur RBAC.
   - apiGroups: [""]
     resources:
-      # `secrets` fait partie du ClusterRole amont de KSM mais est retiré ici :
-      # un `list` sur les secrets renvoie leur contenu, et on n'a besoin
-      # d'aucune métrique de secret.
-      - configmaps
       - nodes
       - pods
       - services
-      - serviceaccounts
       - resourcequotas
-      - replicationcontrollers
-      - limitranges
       - persistentvolumeclaims
       - persistentvolumes
       - namespaces
-      - endpoints
     verbs: [list, watch]
   - apiGroups: ["apps"]
     resources: [statefulsets, daemonsets, deployments, replicasets]
@@ -48,29 +44,17 @@ rules:
   - apiGroups: ["batch"]
     resources: [cronjobs, jobs]
     verbs: [list, watch]
-  - apiGroups: ["autoscaling"]
-    resources: [horizontalpodautoscalers]
-    verbs: [list, watch]
   - apiGroups: ["policy"]
     resources: [poddisruptionbudgets]
     verbs: [list, watch]
   - apiGroups: ["storage.k8s.io"]
-    resources: [storageclasses, volumeattachments]
+    resources: [storageclasses]
     verbs: [list, watch]
   - apiGroups: ["networking.k8s.io"]
-    resources: [networkpolicies, ingressclasses, ingresses]
+    resources: [ingresses]
     verbs: [list, watch]
   - apiGroups: ["coordination.k8s.io"]
     resources: [leases]
-    verbs: [list, watch]
-  - apiGroups: ["rbac.authorization.k8s.io"]
-    resources: [clusterrolebindings, clusterroles, rolebindings, roles]
-    verbs: [list, watch]
-  - apiGroups: ["certificates.k8s.io"]
-    resources: [certificatesigningrequests]
-    verbs: [list, watch]
-  - apiGroups: ["admissionregistration.k8s.io"]
-    resources: [validatingwebhookconfigurations, mutatingwebhookconfigurations]
     verbs: [list, watch]
   # Requis par customresourcestate : KSM résout les CRD avant de watcher les CR.
   - apiGroups: ["apiextensions.k8s.io"]
@@ -143,6 +127,23 @@ spec:
             - --custom-resource-state-config-file=/etc/ksm/customresourcestate.yml
             # false = on garde AUSSI les métriques Kubernetes standard.
             - --custom-resource-state-only=false
+            ##################################################################
+            # Liste EXPLICITE des ressources collectées.
+            #
+            # Sans ce flag, KSM collecte sa liste par défaut, qui inclut
+            # `secrets` et `endpointslices` — et boucle en erreur RBAC sur les
+            # deux (constaté au premier déploiement, CrashLoopBackOff).
+            #
+            # La bonne réponse n'est pas d'élargir le RBAC : c'est de ne pas
+            # collecter ce dont on n'a pas besoin. Un `list` sur les secrets
+            # renvoie leur contenu, et aucune alerte n'en dépend.
+            #
+            # Cette liste couvre exactement ce que consomment les règles de
+            # files/alert-rules.yml : nodes, pods, statefulsets, services
+            # (UnexpectedPubliclyExposedService), pvc/pv, cronjobs/jobs
+            # (backups), pdb, namespaces.
+            ##################################################################
+            - --resources=cronjobs,daemonsets,deployments,ingresses,jobs,leases,namespaces,nodes,persistentvolumeclaims,persistentvolumes,poddisruptionbudgets,pods,replicasets,resourcequotas,services,statefulsets,storageclasses
           ports:
             - name: metrics
               containerPort: 8080
