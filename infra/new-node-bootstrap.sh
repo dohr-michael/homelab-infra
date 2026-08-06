@@ -45,6 +45,7 @@ CHECK_ONLY=0
 NODE_NAME="$(hostname -s)"
 step() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
+warn() { printf '\033[33m    %s\033[0m\n' "$*"; }
 die()  { printf '\033[31mERREUR: %s\033[0m\n' "$*" >&2; exit 1; }
 run()  { if [ "$CHECK_ONLY" = 1 ]; then info "[check] aurait exécuté: $*"; else "$@"; fi; }
 
@@ -86,6 +87,42 @@ if command -v tailscale >/dev/null 2>&1; then
 else
   info "installation du client tailscale"
   run bash -c 'curl -fsSL https://tailscale.com/install.sh | sh'
+fi
+
+##############################################################################
+# Casse la dépendance circulaire DNS ↔ Tailscale.
+#
+# VÉCU LE 2026-08-06, sur ce nœud précisément. tailscaled s'est déconnecté après
+# une longue coupure réseau, et n'a plus JAMAIS pu revenir tout seul :
+#
+#   You are logged out. The last login error was: fetch control key:
+#   Get "https://vpn.dohrm.fr/key?v=142": failed to resolve "vpn.dohrm.fr":
+#   no DNS fallback candidates remain
+#
+# Parce que le nœud accepte le DNS de Headscale (`~.` → 100.100.100.100, soit
+# tailscaled lui-même), résoudre `vpn.dohrm.fr` exige que tailscaled fonctionne.
+# Une fois déconnecté, il lui faut le service qu'il fournit pour se reconnecter.
+# Impasse, qui ne se répare qu'à la main sur la console KVM.
+#
+# Une ligne dans /etc/hosts suffit à la briser définitivement : la résolution du
+# serveur de coordination ne dépend plus d'aucun résolveur.
+##############################################################################
+if [ "$CHECK_ONLY" = 0 ]; then
+  hs_host="${HEADSCALE_URL#https://}"; hs_host="${hs_host%%/*}"; hs_host="${hs_host%%:*}"
+  if grep -qE "[[:space:]]${hs_host}([[:space:]]|\$)" /etc/hosts 2>/dev/null; then
+    info "/etc/hosts contient déjà $hs_host"
+  else
+    # Résolu depuis un résolveur public, avant que le DNS du tailnet ne prenne
+    # la main sur ce nœud.
+    hs_ip=$(getent ahostsv4 "$hs_host" 2>/dev/null | awk 'NR==1{print $1}')
+    if [ -n "$hs_ip" ]; then
+      printf '%s %s\n' "$hs_ip" "$hs_host" >> /etc/hosts
+      info "/etc/hosts : $hs_ip $hs_host (brise la dépendance circulaire DNS)"
+    else
+      warn "impossible de résoudre $hs_host — ajoute la ligne à la main :"
+      warn "    echo '<ip> $hs_host' >> /etc/hosts"
+    fi
+  fi
 fi
 
 run systemctl enable --now tailscaled

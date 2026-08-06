@@ -223,6 +223,26 @@ atterrit. C'est le genre d'incohérence qui coûte une demi-journée à diagnost
 **À trancher pour les trois nœuds en même temps**, hors de cette procédure. L'option
 serait `--accept-dns=false` partout, plus un `forward` explicite dans le Corefile.
 
+> **Cette fragilité a mordu le jour même, et plus fort que prévu.** Je l'avais
+> évaluée côté CoreDNS ; le vrai danger est ailleurs. `vps-4541d883` a perdu le
+> réseau assez longtemps pour que tailscaled se déconnecte, et il n'a plus jamais
+> pu revenir seul :
+>
+> ```
+> You are logged out. The last login error was: fetch control key:
+> Get "https://vpn.dohrm.fr/key?v=142": failed to resolve "vpn.dohrm.fr":
+> no DNS fallback candidates remain
+> ```
+>
+> Le nœud résout tout via `100.100.100.100`, c'est-à-dire via tailscaled. Pour se
+> reconnecter, il lui faut donc le service qu'il fournit lui-même. Impasse, qui ne
+> se répare qu'à la main sur la console KVM.
+>
+> Le correctif est une ligne dans `/etc/hosts` (`51.178.19.49 vpn.dohrm.fr`) : la
+> résolution du serveur de coordination ne dépend plus d'aucun résolveur. Posée
+> par le script sur tout nouveau nœud, et appliquée le 2026-08-06 sur
+> `vps-a7c3e9b8` et `vps-17435151`, qui avaient la même faille.
+
 ---
 
 ## 7. Ce qui reste fragile — et qui n'est pas résolu par ce nœud
