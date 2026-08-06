@@ -1,0 +1,257 @@
+##############################################################################
+# MongoDB PROD — replica set 3 membres, un par nœud
+#
+# TOPOLOGIE
+#   Placement piloté par le label de nœud `role.homelab/mongodb-prod=true`,
+#   pas par une liste de hostnames en dur. Aujourd'hui il est posé sur :
+#     vps-a7c3e9b8, vps-17435151, gmk-ai-master
+#   Quand le 3ᵉ VPS OVH arrive : on le labellise, on retire le label de
+#   gmk-ai-master, l'opérateur reconstruit le membre sur le nouveau nœud.
+#   Voir docs/critical-app-readiness.md § « Arrivée du nœud OVH ».
+#
+#   gmk-ai-master est un membre à part entière (pas un arbitre) : un arbitre
+#   avec writeConcern majority est un anti-pattern MongoDB documenté (perte
+#   de durabilité sur panne d'un porteur de données). Un 3ᵉ membre porteur de
+#   données donne un vrai quorum 2/3 ET une 3ᵉ copie des données.
+#
+#   Le RS traverse le mesh Headscale (~11-30 ms de RTT entre nœuds). C'est le
+#   coût des écritures en `w: majority` : compter ~30-60 ms par write ack.
+#
+# TOLERATIONS — les deux sont nécessaires, sinon le RS ne peut pas s'étaler :
+#   - CriticalAddonsOnly=true:NoSchedule → vps-17435151 (sinon rien n'y va)
+#   - dedicated=ai:NoSchedule            → gmk-ai-master
+#
+# TLS — `preferTLS` (défaut opérateur). Les certificats sont générés par
+#   l'opérateur lui-même (pas de cert-manager dans le cluster) et sont
+#   long-terme, donc à renouveler à la main. Le trafic inter-nœuds passe déjà
+#   dans le tunnel WireGuard de Headscale. Passer à `requireTLS` demandera de
+#   distribuer le CA aux clients — voir le doc.
+##############################################################################
+
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: mongo-prod
+  namespace: mongodb-prod
+  finalizers:
+    # Arrête les pods dans l'ordre (secondaires avant primaire).
+    # `delete-psmdb-pvc` est volontairement ABSENT : supprimer le CR ne doit
+    # jamais effacer les données.
+    - percona.com/delete-psmdb-pods-in-order
+spec:
+  crVersion: 1.23.0
+  image: percona/percona-server-mongodb:8.0.26-11
+  imagePullPolicy: IfNotPresent
+
+  updateStrategy: SmartUpdate
+  upgradeOptions:
+    # Pas de montée de version automatique en prod : on la déclenche par
+    # commit, jamais par un cron qui interroge check.percona.com.
+    versionServiceEndpoint: https://check.percona.com
+    apply: disabled
+    schedule: "0 2 * * *"
+    setFCV: false
+
+  secrets:
+    users: mongo-prod-users
+    # Créée automatiquement par l'opérateur si absente (chiffrement at-rest).
+    encryptionKey: mongo-prod-encryption-key
+
+  tls:
+    mode: preferTLS
+    certManagementPolicy: auto
+    # 10 ans — les certificats auto-générés ne se renouvellent PAS tout seuls.
+    certValidityDuration: 87600h
+
+  # Lectures/écritures sûres par défaut, au niveau serveur : même une app mal
+  # configurée écrit en majority.
+  defaultRWConcern:
+    readConcern: majority
+    writeConcern:
+      w: majority
+      wtimeout: 0
+
+  pmm:
+    enabled: false
+
+  sharding:
+    enabled: false
+
+  # Utilisateur applicatif déclaratif — mot de passe lu dans un secret SOPS.
+  users:
+    - name: app
+      db: appdb
+      passwordSecretRef:
+        name: mongo-prod-app-user
+        key: password
+      roles:
+        - name: readWrite
+          db: appdb
+
+  replsets:
+    - name: rs0
+      size: 3
+
+      nodeSelector:
+        role.homelab/mongodb-prod: "true"
+
+      # Évincé en dernier sous pression mémoire sur les nœuds à 8 Go.
+      priorityClassName: homelab-data
+
+      # Scrape piloté par annotation : vmagent découvre les pods via le job
+      # `kubernetes-pods`. On évite ainsi de dépendre des labels exacts que
+      # l'opérateur pose sur ses pods (qui changent entre versions).
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9216"
+        prometheus.io/path: /metrics
+
+      affinity:
+        antiAffinityTopologyKey: kubernetes.io/hostname
+
+      tolerations:
+        - key: CriticalAddonsOnly
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+        - key: dedicated
+          operator: Equal
+          value: ai
+          effect: NoSchedule
+
+      podDisruptionBudget:
+        maxUnavailable: 1
+
+      expose:
+        enabled: false
+        type: ClusterIP
+
+      configuration: |
+        operationProfiling:
+          mode: slowOp
+          slowOpThresholdMs: 200
+        systemLog:
+          quiet: true
+
+      storage:
+        engine: wiredTiger
+        wiredTiger:
+          engineConfig:
+            # Le cache est calculé en ratio de la limite mémoire du conteneur.
+            # 0.4 × 2 Gi ≈ 800 Mi. Le défaut MongoDB (50 % de RAM-1G, soit
+            # ~3,5 Gi sur ces nœuds à 8 Go) ferait OOM le nœud entier.
+            cacheSizeRatio: 0.4
+            journalCompressor: snappy
+          collectionConfig:
+            blockCompressor: snappy
+          indexConfig:
+            prefixCompression: true
+
+      resources:
+        requests:
+          cpu: 250m
+          memory: 1Gi
+        limits:
+          cpu: "1500m"
+          memory: 2Gi
+
+      volumeSpec:
+        persistentVolumeClaim:
+          storageClassName: local-path-retain
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi
+
+      # Exporter Prometheus en sidecar : co-localisé avec chaque mongod, donc
+      # on obtient le lag de réplication et l'état PAR MEMBRE. Un exporter
+      # unique derrière le Service ne verrait que le primaire.
+      sidecars:
+        - name: mongodb-exporter
+          image: percona/mongodb_exporter:0.52.0
+          args:
+            - --mongodb.uri=mongodb://127.0.0.1:27017/admin
+            - --mongodb.direct-connect
+            - --web.listen-address=:9216
+            - --collect-all
+            - --compatible-mode
+          env:
+            - name: MONGODB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mongo-prod-users
+                  key: MONGODB_CLUSTER_MONITOR_USER
+            - name: MONGODB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongo-prod-users
+                  key: MONGODB_CLUSTER_MONITOR_PASSWORD
+          ports:
+            - name: metrics
+              containerPort: 9216
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              memory: 128Mi
+
+  backup:
+    enabled: true
+    image: percona/percona-backup-mongodb:2.15.0
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+
+    storages:
+      ovh-s3:
+        main: true
+        type: s3
+        s3:
+          # ⚠️ À renseigner après création du bucket OVH (voir le doc).
+          bucket: CHANGEME-homelab-mongodb-backups
+          region: gra
+          endpointUrl: https://s3.gra.io.cloud.ovh.net
+          prefix: mongodb-prod
+          credentialsSecret: mongo-prod-backup-s3
+          retryer:
+            numMaxRetries: 5
+            minRetryDelay: 1s
+            maxRetryDelay: 2m
+
+    # Point-in-time recovery : PBM pousse les chunks d'oplog en continu.
+    # Sans ça, le RPO est l'intervalle entre deux backups (24 h).
+    # Nécessite au moins un backup de base terminé pour démarrer.
+    pitr:
+      enabled: true
+      oplogOnly: false
+      oplogSpanMin: 10
+      compressionType: gzip
+      compressionLevel: 6
+
+    tasks:
+      - name: daily-logical
+        enabled: true
+        schedule: "0 2 * * *"
+        type: logical
+        retention:
+          count: 7
+          type: count
+          deleteFromStorage: true
+        compressionType: gzip
+        compressionLevel: 6
+      - name: weekly-physical
+        enabled: true
+        schedule: "0 4 * * 0"
+        type: physical
+        retention:
+          count: 4
+          type: count
+          deleteFromStorage: true
+        compressionType: gzip
+        compressionLevel: 6

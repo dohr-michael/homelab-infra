@@ -1,0 +1,119 @@
+##############################################################################
+# Opérateur Percona Server for MongoDB — mode cluster-wide
+#
+# Vendorisé depuis deploy/cw-operator.yaml @ v1.23.0, avec ces écarts :
+#   - WATCH_NAMESPACE="" → surveille TOUS les namespaces (mongodb-dev + mongodb-prod)
+#   - RESYNC_PERIOD / RECONCILE_INTERVAL passés de 5s à 30s : sur des VPS à
+#     4 vCPU, une réconciliation toutes les 5s coûte du CPU en permanence
+#   - DISABLE_TELEMETRY=true
+#   - imagePullPolicy: IfNotPresent (tag épinglé)
+#   - requests/limits explicites
+#
+# L'opérateur reste sur un VPS (pas sur gmk-ai-master) : c'est lui qui crée les
+# CronJobs de backup PBM. S'il tombe, le replica set continue de fonctionner et
+# de basculer tout seul, mais les backups s'arrêtent.
+##############################################################################
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: percona-server-mongodb-operator
+  labels:
+    name: percona-server-mongodb-operator
+    app.kubernetes.io/component: operator
+    app.kubernetes.io/instance: percona-server-mongodb-operator
+    app.kubernetes.io/name: percona-server-mongodb-operator
+    app.kubernetes.io/part-of: percona-server-mongodb-operator
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      name: percona-server-mongodb-operator
+  template:
+    metadata:
+      labels:
+        name: percona-server-mongodb-operator
+        app.kubernetes.io/component: operator
+        app.kubernetes.io/instance: percona-server-mongodb-operator
+        app.kubernetes.io/name: percona-server-mongodb-operator
+        app.kubernetes.io/part-of: percona-server-mongodb-operator
+    spec:
+      serviceAccountName: percona-server-mongodb-operator
+      containers:
+        - name: percona-server-mongodb-operator
+          image: percona/percona-server-mongodb-operator:1.23.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - percona-server-mongodb-operator
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+              name: metrics
+            - containerPort: 8081
+              protocol: TCP
+              name: health
+          env:
+            - name: LOG_STRUCTURED
+              value: "false"
+            - name: LOG_LEVEL
+              value: INFO
+            # Vide = cluster-wide, l'opérateur gère mongodb-dev ET mongodb-prod
+            - name: WATCH_NAMESPACE
+              value: ""
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OPERATOR_NAME
+              value: percona-server-mongodb-operator
+            - name: RESYNC_PERIOD
+              value: 30s
+            - name: RECONCILE_INTERVAL
+              value: 30s
+            - name: DISABLE_TELEMETRY
+              value: "true"
+            - name: MAX_CONCURRENT_RECONCILES
+              value: "1"
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: health
+              scheme: HTTP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /readyz
+              port: health
+              scheme: HTTP
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+
+---
+# Service exposant /metrics pour le scrape VictoriaMetrics
+apiVersion: v1
+kind: Service
+metadata:
+  name: percona-server-mongodb-operator
+  labels:
+    app.kubernetes.io/name: percona-server-mongodb-operator
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: /metrics
+spec:
+  type: ClusterIP
+  selector:
+    name: percona-server-mongodb-operator
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
+      protocol: TCP

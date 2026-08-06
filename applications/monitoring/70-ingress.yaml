@@ -1,0 +1,94 @@
+##############################################################################
+# Ingress monitoring
+#
+# Grafana est le seul point d'entrée « produit ». vmsingle / vmalert /
+# Alertmanager sont exposés parce qu'on en a besoin pour débugger (vmui, la
+# liste des cibles de scrape, les silences), mais AUCUN d'eux n'a
+# d'authentification propre : ils ne sont accessibles que par le VPN
+# Headscale. Ne pas les exposer au-delà.
+##############################################################################
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana
+  namespace: monitoring
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: grafana.home.dohrm.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana
+                port:
+                  number: 3000
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: alertmanager
+  namespace: monitoring
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: alertmanager.home.dohrm.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: alertmanager
+                port:
+                  number: 9093
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vmsingle
+  namespace: monitoring
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    # vmui + /targets pour vérifier ce qui est réellement scrapé.
+    - host: metrics.home.dohrm.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vmsingle
+                port:
+                  number: 8428
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vmalert
+  namespace: monitoring
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: vmalert.home.dohrm.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vmalert
+                port:
+                  number: 8880

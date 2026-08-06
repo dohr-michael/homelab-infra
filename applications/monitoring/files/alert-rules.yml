@@ -1,0 +1,392 @@
+##############################################################################
+# Règles d'alerte vmalert
+#
+# PRINCIPE DE CONSTRUCTION
+#   Les alertes de premier rang s'appuient sur des métriques dont on contrôle
+#   la définition : kube-state-metrics (y compris la config
+#   customresourcestate écrite dans ce repo) et node-exporter. Ces noms de
+#   métriques ne bougeront pas sous nos pieds.
+#
+#   Les alertes basées sur mongodb_exporter sont en second rang et signalées
+#   comme telles : les noms de séries de l'exporter Percona varient d'une
+#   version à l'autre. À valider après le premier déploiement :
+#
+#     kubectl -n mongodb-dev exec deploy/... -c mongodb-exporter -- \
+#       wget -qO- localhost:9216/metrics | grep -E '^mongodb_(up|rs_)'
+#
+#   Une alerte qui ne peut pas se déclencher est pire que pas d'alerte : elle
+#   donne l'illusion d'être couvert.
+##############################################################################
+
+groups:
+  # ==========================================================================
+  - name: meta
+    interval: 1m
+    rules:
+      # Alerte toujours active. Sert de dead-man's switch : un service externe
+      # qui cesse de la recevoir sait que TOUT est tombé (nœud maison,
+      # vmalert, Alertmanager ou le réseau). Sans ça, la panne du monitoring
+      # est silencieuse — c'est-à-dire indistinguable de « tout va bien ».
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: "Chaîne d'alerting vivante"
+          description: >-
+            Cette alerte est toujours active par construction. Si elle cesse
+            d'arriver, c'est la chaîne de monitoring qui est en panne.
+
+      - alert: MonitoringTargetDown
+        expr: up == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cible de scrape injoignable : {{ $labels.job }}"
+          description: >-
+            {{ $labels.job }} / {{ $labels.instance }} ne répond plus depuis
+            10 minutes.
+
+      - alert: VMAgentRemoteWriteFailing
+        expr: |
+          sum(rate(vmagent_remotewrite_packets_dropped_total[10m])) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "vmagent jette des métriques"
+          description: >-
+            Le remote-write vers vmsingle échoue : des points sont perdus
+            définitivement. Vérifier vmsingle et l'espace disque.
+
+  # ==========================================================================
+  - name: nodes
+    interval: 1m
+    rules:
+      - alert: KubeNodeNotReady
+        expr: |
+          kube_node_status_condition{condition="Ready",status="true"} == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Nœud {{ $labels.node }} NotReady"
+          description: >-
+            Le nœud est NotReady depuis 10 minutes. Sur un cluster à
+            3 nœuds de données, c'est un membre du replica set MongoDB en
+            moins et, s'il s'agit d'un control-plane, le quorum etcd est
+            engagé.
+
+      # Les VPS ont 8 Go : la marge est fine et l'OOM killer frappe le pod
+      # avec le plus gros dépassement de requests, pas le fautif.
+      - alert: NodeMemoryCritical
+        expr: |
+          (
+            node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes
+          ) < 0.10
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Moins de 10 % de RAM disponible sur {{ $labels.instance }}"
+          description: >-
+            Risque d'éviction imminent. Vérifier les limites mémoire, et en
+            particulier le cache WiredTiger de MongoDB
+            (cacheSizeRatio dans le CR).
+
+      - alert: NodeMemoryLow
+        expr: |
+          (
+            node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes
+          ) < 0.20
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Moins de 20 % de RAM disponible sur {{ $labels.instance }}"
+
+      - alert: NodeDiskSpaceLow
+        expr: |
+          (
+            node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs"}
+            /
+            node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs"}
+          ) < 0.15
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Moins de 15 % d'espace libre sur {{ $labels.instance }}{{ $labels.mountpoint }}"
+          description: >-
+            Attention : etcd passe en lecture seule sous
+            le seuil de quota, et local-path ne sait pas étendre un volume.
+
+      - alert: NodeDiskWillFillIn24h
+        expr: |
+          predict_linear(
+            node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs"}[6h],
+            24 * 3600
+          ) < 0
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}{{ $labels.mountpoint }} plein d'ici 24 h"
+          description: >-
+            Extrapolation sur les 6 dernières heures. Agir avant saturation :
+            un local-path plein bloque MongoDB en écriture.
+
+  # ==========================================================================
+  - name: etcd
+    interval: 1m
+    rules:
+      ##########################################################################
+      # ⚠️ Ces alertes restent MUETTES tant que k3s n'expose pas les métriques
+      #    etcd : par défaut elles ne sont servies que sur 127.0.0.1:2381.
+      #    Il faut `etcd-expose-metrics: true` sur les nœuds control-plane
+      #    (voir docs/critical-app-readiness.md § « Métriques etcd »).
+      #    Avec 2 membres seulement, la santé d'etcd est LE point de fragilité
+      #    du cluster : perdre un membre suffit à perdre le quorum.
+      ##########################################################################
+      - alert: EtcdNoLeader
+        expr: etcd_server_has_leader == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "etcd sans leader sur {{ $labels.instance }}"
+          description: >-
+            Le cluster Kubernetes est en lecture seule ou totalement
+            indisponible. Perte de quorum probable.
+
+      - alert: EtcdQuorumFragile
+        expr: count(etcd_server_has_leader) < 3
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Moins de 3 membres etcd ({{ $value }})"
+          description: >-
+            Avec 2 membres, la majorité est de 2 : la panne d'UN nœud rend
+            l'API server indisponible. Cette alerte se taira quand le 3ᵉ nœud
+            OVH aura rejoint le cluster.
+
+      - alert: EtcdHighFsyncDuration
+        expr: |
+          histogram_quantile(0.99,
+            rate(etcd_disk_wal_fsync_duration_seconds_bucket[5m])
+          ) > 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "fsync WAL etcd lent sur {{ $labels.instance }}"
+          description: >-
+            Le disque du control-plane n'arrive plus à suivre etcd. Cause
+            fréquente d'élections en boucle.
+
+  # ==========================================================================
+  - name: workloads
+    interval: 1m
+    rules:
+      - alert: KubePodCrashLooping
+        expr: |
+          increase(kube_pod_container_status_restarts_total[1h]) > 5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.namespace }}/{{ $labels.pod }} redémarre en boucle"
+          description: >-
+            Plus de 5 redémarrages du conteneur
+            {{ $labels.container }} en une heure.
+
+      # C'est cette alerte qui aurait rattrapé le repo-server ArgoCD bloqué
+      # 28 jours en crashloop sur son init container.
+      - alert: KubeContainerWaiting
+        expr: |
+          kube_pod_container_status_waiting_reason{reason!="ContainerCreating"} == 1
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.namespace }}/{{ $labels.pod }} bloqué en {{ $labels.reason }}"
+          description: >-
+            Le conteneur {{ $labels.container }} n'a pas démarré depuis
+            une heure.
+
+      - alert: KubeStatefulSetReplicasMismatch
+        expr: |
+          kube_statefulset_status_replicas_ready
+            != kube_statefulset_replicas
+        for: 20m
+        labels:
+          severity: warning
+        annotations:
+          summary: "StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} incomplet"
+
+      - alert: KubePersistentVolumeFillingUp
+        expr: |
+          (
+            kubelet_volume_stats_available_bytes
+            /
+            kubelet_volume_stats_capacity_bytes
+          ) < 0.15
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} à plus de 85 %"
+          description: >-
+            local-path-retain n'autorise PAS l'extension à chaud
+            (allowVolumeExpansion: false) : il faut migrer les données, pas
+            agrandir. Anticiper.
+
+  # ==========================================================================
+  - name: gitops
+    interval: 1m
+    rules:
+      # Le mode de panne réellement observé sur ce cluster : le repo-server
+      # crashloope, toutes les Applications basculent en sync "Unknown", et
+      # rien ne se déploie pendant des semaines sans aucun signal.
+      - alert: ArgoCDSyncStatusUnknown
+        expr: argocd_app_sync_status{sync_status="Unknown"} == 1
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ArgoCD ne peut plus évaluer {{ $labels.name }}"
+          description: >-
+            Un statut Unknown signifie que le repo-server n'arrive pas à
+            rendre les manifestes (crashloop, clé SSH, ou CMP SOPS en échec).
+            GitOps est à l'arrêt : les commits ne partent plus en production.
+
+      - alert: ArgoCDAppOutOfSync
+        expr: argocd_app_sync_status{sync_status="OutOfSync"} == 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.name }} OutOfSync depuis 30 min"
+          description: >-
+            Avec selfHeal activé, un OutOfSync persistant veut dire que le
+            sync échoue en boucle.
+
+      - alert: ArgoCDAppDegraded
+        expr: argocd_app_health_status{health_status="Degraded"} == 1
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Application ArgoCD {{ $labels.name }} dégradée"
+
+  # ==========================================================================
+  - name: mongodb-state
+    interval: 1m
+    rules:
+      # Premier rang : métriques issues de notre propre config
+      # customresourcestate, donc dont les noms sont garantis.
+      - alert: PSMDBClusterNotReady
+        expr: psmdb_cluster_state{state="ready"} == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Cluster MongoDB {{ $labels.namespace }}/{{ $labels.name }} pas ready"
+
+      - alert: PSMDBMemberMissing
+        expr: |
+          psmdb_cluster_ready_members < psmdb_cluster_expected_members
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.namespace }}/{{ $labels.name }} : {{ $value }} membre(s) manquant(s)"
+          description: >-
+            Sur un RS à 3 membres, un membre absent est tolérable mais il ne
+            reste plus aucune marge : la perte d'un second membre fait perdre
+            la majorité et le RS passe en lecture seule.
+
+  # ==========================================================================
+  - name: mongodb-backup
+    interval: 5m
+    rules:
+      - alert: PSMDBBackupFailed
+        expr: psmdb_backup_state{state="error"} == 1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backup MongoDB en erreur : {{ $labels.namespace }}/{{ $labels.name }}"
+          description: >-
+            Storage {{ $labels.storage }}. Vérifier les credentials S3 et
+            l'existence du bucket.
+
+      # Le backup planifié tourne à 02:00 ; 36 h laissent passer un échec
+      # ponctuel rattrapé le lendemain, mais pas deux d'affilée.
+      - alert: PSMDBBackupStale
+        expr: |
+          time() - max by (namespace) (psmdb_backup_completed_timestamp_seconds)
+            > 36 * 3600
+        labels:
+          severity: critical
+        annotations:
+          summary: "Aucun backup MongoDB terminé depuis plus de 36 h dans {{ $labels.namespace }}"
+          description: >-
+            Le RPO est dépassé. Soit le CronJob PBM ne s'est pas déclenché,
+            soit l'opérateur est down (c'est lui qui crée les jobs de backup).
+
+      # `absent()` couvre le cas que la règle précédente ne peut pas voir : si
+      # AUCUN backup n'a jamais abouti, la série n'existe pas et un
+      # `time() - max(...)` ne renvoie rien du tout.
+      - alert: PSMDBNoBackupEver
+        expr: |
+          absent(psmdb_backup_completed_timestamp_seconds{namespace="mongodb-prod"})
+        for: 6h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Aucun backup MongoDB de production n'a jamais abouti"
+          description: >-
+            Ni PITR ni restauration ne sont possibles en l'état. À traiter
+            avant toute mise en service.
+
+  # ==========================================================================
+  - name: mongodb-runtime
+    interval: 1m
+    rules:
+      ##########################################################################
+      # ⚠️ SECOND RANG — noms de séries dépendants de la version de
+      #    percona/mongodb_exporter. À confirmer sur /metrics après le premier
+      #    déploiement (commande en tête de fichier). Le filet de sécurité
+      #    réel, ce sont les groupes mongodb-state et mongodb-backup ci-dessus.
+      ##########################################################################
+      - alert: MongoDBInstanceDown
+        expr: mongodb_up == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "mongod injoignable depuis l'exporter de {{ $labels.pod }}"
+
+      # Le lag est mesuré comme l'écart d'optime ENTRE membres, sans dépendre
+      # du nom des labels de l'exporter (member_state, member_idx, etc. qui
+      # changent selon les versions).
+      - alert: MongoDBReplicationLagHigh
+        expr: |
+          (
+            max by (namespace) (mongodb_rs_members_optimeDate)
+            -
+            min by (namespace) (mongodb_rs_members_optimeDate)
+          ) > 60
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Lag de réplication > 60 s dans {{ $labels.namespace }}"
+          description: >-
+            Attendu à travers le mesh Headscale sous forte écriture, mais un
+            lag durable finit par bloquer les écritures en w:majority.
+            Vérifier l'unité de mongodb_rs_members_optimeDate (s ou ms) au
+            premier déclenchement.

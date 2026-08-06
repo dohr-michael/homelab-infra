@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# PAS de `namespace:` ici, volontairement : le transformer réécrirait le
+# `namespace: kube-system` du Secret etcd-s3-config vers cluster-baseline,
+# et k3s ne le trouverait jamais.
+
+resources:
+  - 00-namespace.yaml
+  - 10-storageclass.yaml
+  - 20-priorityclasses.yaml
+
+generators:
+  - ksops-generator.yaml

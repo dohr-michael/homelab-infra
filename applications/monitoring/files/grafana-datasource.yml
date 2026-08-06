@@ -1,0 +1,28 @@
+##############################################################################
+# Provisioning de datasources Grafana
+#
+# VictoriaMetrics parle l'API de query Prometheus : type `prometheus`.
+# vmalert est ajoutée en second pour pouvoir inspecter les règles et leur état
+# depuis l'onglet Alerting de Grafana.
+##############################################################################
+apiVersion: 1
+
+datasources:
+  - name: VictoriaMetrics
+    type: prometheus
+    access: proxy
+    url: http://vmsingle.monitoring.svc.cluster.local:8428
+    isDefault: true
+    jsonData:
+      # Doit correspondre au scrape_interval de vmagent, sinon Grafana calcule
+      # des rate() sur des fenêtres trop courtes et affiche des trous.
+      timeInterval: 30s
+      httpMethod: POST
+
+  - name: vmalert
+    type: prometheus
+    access: proxy
+    url: http://vmalert.monitoring.svc.cluster.local:8880
+    isDefault: false
+    jsonData:
+      httpMethod: GET

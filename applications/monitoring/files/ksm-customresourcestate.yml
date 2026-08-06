@@ -1,0 +1,108 @@
+##############################################################################
+# kube-state-metrics — métriques issues des Custom Resources
+#
+# Sans ça, aucune métrique ne répond à « est-ce que mes backups tournent ? » ni
+# « est-ce que ArgoCD synchronise encore ? ». Les opérateurs exposent des
+# métriques controller-runtime (latence de réconciliation, file d'attente),
+# pas l'état métier de leurs objets.
+##############################################################################
+kind: CustomResourceStateMetrics
+spec:
+  resources:
+    # ------------------------------------------------------------ clusters RS
+    - groupVersionKind:
+        group: psmdb.percona.com
+        version: v1
+        kind: PerconaServerMongoDB
+      metricNamePrefix: psmdb_cluster
+      labelsFromPath:
+        name: [metadata, name]
+        namespace: [metadata, namespace]
+      metrics:
+        - name: state
+          help: "État du cluster PSMDB rapporté par l'opérateur"
+          each:
+            type: StateSet
+            stateSet:
+              labelName: state
+              path: [status, state]
+              list: [initializing, paused, stopping, ready, error]
+        - name: ready_members
+          help: "Nombre de membres prêts, toutes replsets confondues"
+          each:
+            type: Gauge
+            gauge:
+              path: [status, ready]
+              nilIsZero: true
+        - name: expected_members
+          help: "Nombre de membres attendus"
+          each:
+            type: Gauge
+            gauge:
+              path: [status, size]
+              nilIsZero: true
+
+    # ----------------------------------------------------------------- backups
+    - groupVersionKind:
+        group: psmdb.percona.com
+        version: v1
+        kind: PerconaServerMongoDBBackup
+      metricNamePrefix: psmdb_backup
+      labelsFromPath:
+        name: [metadata, name]
+        namespace: [metadata, namespace]
+        cluster: [spec, clusterName]
+        storage: [spec, storageName]
+        backup_type: [spec, type]
+      metrics:
+        - name: state
+          help: "État du backup PBM"
+          each:
+            type: StateSet
+            stateSet:
+              labelName: state
+              path: [status, state]
+              list: [waiting, requested, rejected, running, error, ready]
+        # Horodatage RFC3339 → timestamp Unix. C'est cette métrique qui porte
+        # l'alerte de fraîcheur : `time() - max(...) > 36h`.
+        - name: completed_timestamp_seconds
+          help: "Date de fin du backup (epoch)"
+          each:
+            type: Gauge
+            gauge:
+              path: [status, completed]
+        - name: created_timestamp_seconds
+          help: "Date de création de l'objet backup (epoch)"
+          each:
+            type: Gauge
+            gauge:
+              path: [metadata, creationTimestamp]
+
+    # -------------------------------------------------------- Argo CD (GitOps)
+    - groupVersionKind:
+        group: argoproj.io
+        version: v1alpha1
+        kind: Application
+      metricNamePrefix: argocd_app
+      labelsFromPath:
+        name: [metadata, name]
+        namespace: [metadata, namespace]
+      metrics:
+        - name: sync_status
+          help: "Statut de synchronisation de l'Application"
+          each:
+            type: StateSet
+            stateSet:
+              labelName: sync_status
+              path: [status, sync, status]
+              # `Unknown` est l'état qu'a pris tout le cluster pendant les
+              # 28 jours où le repo-server était en crashloop.
+              list: [Synced, OutOfSync, Unknown]
+        - name: health_status
+          help: "Statut de santé de l'Application"
+          each:
+            type: StateSet
+            stateSet:
+              labelName: health_status
+              path: [status, health, status]
+              list: [Healthy, Progressing, Degraded, Suspended, Missing, Unknown]

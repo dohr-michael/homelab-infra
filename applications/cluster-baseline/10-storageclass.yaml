@@ -1,0 +1,37 @@
+##############################################################################
+# StorageClass local-path-retain
+#
+# POURQUOI UNE SECONDE STORAGECLASS
+#   La `local-path` par défaut de k3s a reclaimPolicy: Delete. Supprimer un PVC
+#   — ou un opérateur qui recrée un StatefulSet — efface les données du disque.
+#   Inacceptable pour MongoDB.
+#   Avec Retain, le PV passe en `Released` et les données restent sur le nœud :
+#   on peut se rattacher dessus ou faire le ménage à la main.
+#
+# LOCAL-PATH ET MONGODB
+#   Le stockage local est le BON choix ici : MongoDB réplique lui-même, une
+#   couche de réplication bloc en dessous serait redondante et coûteuse en I/O
+#   à travers le mesh Headscale.
+#   Contrepartie assumée : un PV est cloué à son nœud. Si un nœud est perdu
+#   définitivement, on ne « déplace » pas le volume — on supprime le PVC du
+#   membre et l'opérateur resynchronise un membre neuf depuis le RS
+#   (initial sync), ou on restaure depuis PBM.
+#
+# ALLOWVOLUMEEXPANSION
+#   Le provisioner local-path ne sait pas étendre un volume : les PVC ne sont
+#   pas redimensionnables à chaud. Dimensionner large dès le départ.
+##############################################################################
+
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-retain
+  annotations:
+    # Ne jamais devenir la classe par défaut : ça changerait le comportement
+    # des apps existantes qui s'appuient sur `local-path`.
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: rancher.io/local-path
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false

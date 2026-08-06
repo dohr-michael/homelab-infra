@@ -1,0 +1,109 @@
+##############################################################################
+# Configuration Alertmanager
+#
+# CE FICHIER EST EN CLAIR ET LE REPO EST PUBLIC.
+#   Aucun credential ici : le token du bot Telegram, le chat_id et l'URL du
+#   webhook Discord sont lus depuis des FICHIERS montés depuis un Secret SOPS
+#   (bot_token_file / chat_id_file / webhook_url_file). Le routage reste ainsi
+#   relisible et diffable, sans rien exposer.
+#
+# POURQUOI TELEGRAM *ET* DISCORD
+#   Les deux canaux sont hors cluster : ils continuent de délivrer quand le
+#   cluster est mort. C'est aussi la porte d'entrée prévue pour brancher un
+#   agent (type Hermes) sur le flux d'alertes plus tard, d'où le
+#   `send_resolved: true` partout — un agent a besoin de voir les
+#   résolutions, pas seulement les déclenchements.
+##############################################################################
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: default
+  group_by: [alertname, namespace]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+
+  routes:
+    # Le Watchdog ne doit jamais atteindre un humain : il n'existe que pour
+    # être consommé par un dead-man's switch externe.
+    - matchers:
+        - alertname = "Watchdog"
+      receiver: "null"
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 5m
+
+    - matchers:
+        - severity = "critical"
+      receiver: critical
+      # Un critical se répète toutes les 4 h tant qu'il n'est pas résolu :
+      # assez pour ne pas l'oublier, pas assez pour être ignoré par réflexe.
+      repeat_interval: 4h
+
+    - matchers:
+        - severity = "warning"
+      receiver: warning
+      repeat_interval: 24h
+
+inhibit_rules:
+  # Un nœud NotReady rend tous ses pods indisponibles : inutile de recevoir
+  # 20 alertes pour une seule cause.
+  - source_matchers:
+      - alertname = "KubeNodeNotReady"
+    target_matchers:
+      - severity =~ "warning|critical"
+    equal: [node]
+
+  # Si le cluster MongoDB est déjà signalé down, taire les alertes de membre.
+  - source_matchers:
+      - alertname = "PSMDBClusterNotReady"
+    target_matchers:
+      - alertname = "PSMDBMemberMissing"
+    equal: [namespace]
+
+  - source_matchers:
+      - severity = "critical"
+    target_matchers:
+      - severity = "warning"
+    equal: [alertname, namespace]
+
+receivers:
+  - name: "null"
+
+  - name: default
+    telegram_configs:
+      - bot_token_file: /etc/alertmanager/secrets/telegram-bot-token
+        chat_id_file: /etc/alertmanager/secrets/telegram-chat-id
+        parse_mode: HTML
+        send_resolved: true
+        message: |
+          {{ template "homelab.telegram" . }}
+
+  - name: critical
+    telegram_configs:
+      - bot_token_file: /etc/alertmanager/secrets/telegram-bot-token
+        chat_id_file: /etc/alertmanager/secrets/telegram-chat-id
+        parse_mode: HTML
+        send_resolved: true
+        message: |
+          {{ template "homelab.telegram" . }}
+    discord_configs:
+      - webhook_url_file: /etc/alertmanager/secrets/discord-webhook-url
+        send_resolved: true
+        title: '{{ template "homelab.title" . }}'
+        message: |
+          {{ template "homelab.discord" . }}
+
+  - name: warning
+    telegram_configs:
+      - bot_token_file: /etc/alertmanager/secrets/telegram-bot-token
+        chat_id_file: /etc/alertmanager/secrets/telegram-chat-id
+        parse_mode: HTML
+        send_resolved: true
+        message: |
+          {{ template "homelab.telegram" . }}
+
+templates:
+  - /etc/alertmanager/templates/*.tmpl

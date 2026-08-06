@@ -1,0 +1,108 @@
+##############################################################################
+# vmalert — évaluation des règles, envoi vers Alertmanager
+#
+# `-remoteWrite.url` sert à persister l'état des alertes (ALERTS_FOR_STATE)
+# dans vmsingle : sans ça, un redémarrage de vmalert remet à zéro tous les
+# compteurs `for:` et une alerte en cours d'incubation depuis 50 minutes
+# repart de zéro.
+##############################################################################
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmalert
+  namespace: monitoring
+  labels:
+    app: vmalert
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: vmalert
+  template:
+    metadata:
+      labels:
+        app: vmalert
+    spec:
+      priorityClassName: homelab-platform
+      nodeSelector:
+        role.homelab/monitoring: "true"
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: ai
+          effect: NoSchedule
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+      containers:
+        - name: vmalert
+          image: victoriametrics/vmalert:v1.149.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - -rule=/etc/vmalert/rules/*.yml
+            - -datasource.url=http://vmsingle.monitoring.svc.cluster.local:8428
+            - -remoteWrite.url=http://vmsingle.monitoring.svc.cluster.local:8428
+            - -remoteRead.url=http://vmsingle.monitoring.svc.cluster.local:8428
+            - -notifier.url=http://alertmanager.monitoring.svc.cluster.local:9093
+            - -evaluationInterval=1m
+            # Liens cliquables vers Grafana dans les notifications.
+            - -external.url=https://grafana.home.dohrm.fr
+            - -external.alert.source=explore
+            - -httpListenAddr=:8880
+          ports:
+            - name: http
+              containerPort: 8880
+              protocol: TCP
+          volumeMounts:
+            - name: rules
+              mountPath: /etc/vmalert/rules
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: rules
+          configMap:
+            name: vmalert-rules
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vmalert
+  namespace: monitoring
+  labels:
+    app: vmalert
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8880"
+spec:
+  type: ClusterIP
+  selector:
+    app: vmalert
+  ports:
+    - name: http
+      port: 8880
+      targetPort: http
+      protocol: TCP

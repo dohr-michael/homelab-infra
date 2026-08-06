@@ -1,0 +1,10 @@
+---
+# Namespace créé par l'ApplicationSet (destination = nom du dossier). Il reste
+# vide : tout ce que porte cette app est soit cluster-scoped (StorageClass,
+# PriorityClass), soit explicitement dans kube-system (config etcd → S3).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cluster-baseline
+  labels:
+    homelab.dohrm.fr/tier: platform

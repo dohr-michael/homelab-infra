@@ -1,0 +1,184 @@
+##############################################################################
+# RustFS — object storage S3-compatible, environnement de DEV uniquement
+#
+# RÔLE
+#   Cible S3 locale pour (a) valider la chaîne backup/restore PBM sans toucher
+#   au bucket OVH de prod, (b) tester les uploads applicatifs.
+#
+# ⚠️ RustFS est en 1.0.0-beta : jamais de données de prod ici. Le S3 de prod
+#   reste OVH Object Storage.
+#
+# PLACEMENT
+#   gmk-ai-master : c'est le seul nœud avec du disque (950 Go libres). Les VPS
+#   n'ont que ~42 Go, dont il faut garder de la marge pour etcd et les images.
+#
+# STOCKAGE
+#   Un seul volume (pas d'erasure coding) : mono-nœud, mono-disque. La
+#   résilience de ces données n'est pas un objectif — c'est du dev, et le
+#   backup de référence part chez OVH depuis la prod.
+##############################################################################
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rustfs-data
+  namespace: rustfs
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path-retain
+  resources:
+    requests:
+      storage: 100Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rustfs
+  namespace: rustfs
+  labels:
+    app: rustfs
+spec:
+  replicas: 1
+  # Volume RWO sur du local-path : jamais deux pods en même temps.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rustfs
+  template:
+    metadata:
+      labels:
+        app: rustfs
+    spec:
+      nodeSelector:
+        role.homelab/rustfs: "true"
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: ai
+          effect: NoSchedule
+
+      securityContext:
+        # Utilisateur runtime par défaut de l'image RustFS.
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+
+      initContainers:
+        # local-path provisionne un répertoire vide appartenant à root ;
+        # RustFS tourne en 10001 et doit pouvoir créer son volume.
+        - name: init-volume
+          image: busybox:1.38.0-musl
+          command:
+            - sh
+            - -c
+            - mkdir -p /data/rustfs0 && chown -R 10001:10001 /data
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+
+      containers:
+        - name: rustfs
+          image: rustfs/rustfs:1.0.0-beta.12
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+
+          env:
+            - name: RUSTFS_VOLUMES
+              value: /data/rustfs0
+            - name: RUSTFS_ADDRESS
+              value: 0.0.0.0:9000
+            - name: RUSTFS_CONSOLE_ADDRESS
+              value: 0.0.0.0:9001
+            - name: RUSTFS_CONSOLE_ENABLE
+              value: "true"
+            - name: RUSTFS_OBS_LOGGER_LEVEL
+              value: info
+            - name: RUSTFS_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rustfs-credentials
+                  key: RUSTFS_ACCESS_KEY
+            - name: RUSTFS_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rustfs-credentials
+                  key: RUSTFS_SECRET_KEY
+
+          ports:
+            - name: s3
+              containerPort: 9000
+              protocol: TCP
+            - name: console
+              containerPort: 9001
+              protocol: TCP
+
+          volumeMounts:
+            - name: data
+              mountPath: /data
+
+          # Endpoints de santé repris du healthcheck du docker-compose amont.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: s3
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: s3
+            initialDelaySeconds: 40
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: rustfs-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rustfs
+  namespace: rustfs
+  labels:
+    app: rustfs
+spec:
+  type: ClusterIP
+  selector:
+    app: rustfs
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+      protocol: TCP
+    - name: console
+      port: 9001
+      targetPort: console
+      protocol: TCP

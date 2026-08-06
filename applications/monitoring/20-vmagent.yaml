@@ -1,0 +1,164 @@
+##############################################################################
+# vmagent — scrape et remote-write vers vmsingle
+#
+# MODÈLE DE DÉCOUVERTE
+#   Deux jobs génériques pilotés par annotation font tout le travail :
+#     - `kubernetes-service-endpoints` : annotations sur un Service
+#     - `kubernetes-pods`              : annotations sur un Pod
+#   Annotations reconnues : prometheus.io/scrape, /port, /path, /scheme.
+#   Conséquence : ajouter une app au monitoring = 3 annotations dans SON
+#   kustomization, aucun commit ici.
+#
+#   Les jobs infra (apiserver, kubelet, cAdvisor) sont explicites parce qu'ils
+#   passent par le proxy de l'apiserver et ne portent pas d'annotations.
+##############################################################################
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vmagent
+  namespace: monitoring
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vmagent
+rules:
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - nodes/metrics
+      - nodes/proxy
+      - services
+      - endpoints
+      - pods
+    verbs: [get, list, watch]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: [endpointslices]
+    verbs: [get, list, watch]
+  - apiGroups: ["networking.k8s.io"]
+    resources: [ingresses]
+    verbs: [get, list, watch]
+  - nonResourceURLs: ["/metrics", "/metrics/resource", "/metrics/cadvisor"]
+    verbs: [get]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vmagent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vmagent
+subjects:
+  - kind: ServiceAccount
+    name: vmagent
+    namespace: monitoring
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmagent
+  namespace: monitoring
+  labels:
+    app: vmagent
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: vmagent
+  template:
+    metadata:
+      labels:
+        app: vmagent
+    spec:
+      serviceAccountName: vmagent
+      priorityClassName: homelab-platform
+      nodeSelector:
+        role.homelab/monitoring: "true"
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: ai
+          effect: NoSchedule
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: vmagent
+          image: victoriametrics/vmagent:v1.149.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - -promscrape.config=/etc/vmagent/scrape.yml
+            - -promscrape.configCheckInterval=1m
+            - -remoteWrite.url=http://vmsingle.monitoring.svc.cluster.local:8428/api/v1/write
+            # Tampon disque : si vmsingle redémarre, vmagent garde les points
+            # au lieu de les perdre.
+            - -remoteWrite.tmpDataPath=/vmagent-data
+            - -remoteWrite.maxDiskUsagePerURL=2GiB
+            - -httpListenAddr=:8429
+          ports:
+            - name: http
+              containerPort: 8429
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/vmagent
+              readOnly: true
+            - name: tmpdata
+              mountPath: /vmagent-data
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: config
+          configMap:
+            name: vmagent-scrape-config
+        - name: tmpdata
+          emptyDir:
+            sizeLimit: 3Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vmagent
+  namespace: monitoring
+  labels:
+    app: vmagent
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8429"
+spec:
+  type: ClusterIP
+  selector:
+    app: vmagent
+  ports:
+    - name: http
+      port: 8429
+      targetPort: http
+      protocol: TCP

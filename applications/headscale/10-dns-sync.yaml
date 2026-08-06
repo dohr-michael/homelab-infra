@@ -1,11 +1,36 @@
 ##############################################################################
 # Headscale DNS sync
 #
-# Copie les records DNS depuis un ConfigMap vers /etc/headscale/dns.json
-# sur le node vps-a7c3e9b8 (Headscale server).
+# Copie les records DNS depuis un ConfigMap vers /etc/headscale/dns.json sur le
+# node vps-a7c3e9b8 (serveur Headscale). ArgoCD met à jour le ConfigMap à chaque
+# push, le CronJob recopie le fichier toutes les minutes.
 #
-# ArgoCD met à jour le ConfigMap à chaque push, le CronJob copie
-# le fichier toutes les minutes.
+# POURQUOI CE FICHIER EST INDISPENSABLE
+#   Headscale est configuré avec `base_domain: home.dohrm.fr` et
+#   `override_local_dns: true`. Les clients du tailnet reçoivent donc
+#   100.100.100.100 comme résolveur pour `~.` (tout), et Headscale est
+#   AUTORITAIRE sur home.dohrm.fr : un nom absent d'ici et qui n'est pas un nom
+#   de nœud renvoie NXDOMAIN. Il n'y a PAS de repli sur le DNS public OVH.
+#   Autrement dit : publier un Ingress ne suffit pas à le rendre joignable —
+#   external-dns crée bien un A record public, mais les clients VPN ne le
+#   consultent jamais. Vérifié le 2026-08-06 : grafana.home.dohrm.fr ne résolvait
+#   pas alors que son Ingress existait.
+#
+#   Tout pointe sur 100.64.0.1 : c'est là que tourne Caddy, qui termine le TLS
+#   (wildcard *.home.dohrm.fr via DNS-01 OVH), filtre sur 100.64.0.0/16 et
+#   reverse-proxy vers Traefik sur localhost:81.
+#
+# ⚠️ CE CONFIGMAP EST LA SOURCE DE VÉRITÉ, ET IL ÉCRASE LE FICHIER DU SERVEUR.
+#   Au 2026-08-06, l'app `headscale` n'avait jamais été déployée (il lui manquait
+#   son ksops-generator.yaml, donc ArgoCD ne pouvait pas la rendre). Le fichier
+#   du serveur était maintenu à la main et avait divergé. La liste ci-dessous est
+#   l'UNION des records réellement en place et de ceux du repo : ne rien
+#   supprimer ici sans avoir vérifié que le service correspondant est bien mort.
+#
+#   Records repris du serveur dont le service semble arrêté ou archivé — à
+#   élaguer volontairement, pas par accident : `ha` (home-assistant, archivé),
+#   `wger` (absent du repo), `stt-api` (whisper, commenté dans ai-stack),
+#   `ai` / `sd-api` / `llm-api*` / `embedding-api` (ai-stack largement commenté).
 ##############################################################################
 
 ---
@@ -17,36 +42,25 @@ metadata:
 data:
   dns.json: |
     [
-      {
-        "name": "argo.home.dohrm.fr",
-        "type": "A",
-        "value": "100.64.0.1"
-      },
-      {
-        "name": "ai.home.dohrm.fr",
-        "type": "A",
-        "value": "100.64.0.1"
-      },
-      {
-        "name": "llm-api.home.dohrm.fr",
-        "type": "A",
-        "value": "100.64.0.1"
-      },
-      {
-        "name": "sd-api.home.dohrm.fr",
-        "type": "A",
-        "value": "100.64.0.1"
-      },
-      {
-        "name": "n8n.home.dohrm.fr",
-        "type": "A",
-        "value": "100.64.0.1"
-      },
-      {
-        "name": "embedding-api.home.dohrm.fr",
-        "type": "A",
-        "value": "100.64.0.1"
-      }
+      { "name": "vpn.home.dohrm.fr",           "type": "A", "value": "100.64.0.1" },
+      { "name": "argo.home.dohrm.fr",          "type": "A", "value": "100.64.0.1" },
+      { "name": "n8n.home.dohrm.fr",           "type": "A", "value": "100.64.0.1" },
+
+      { "name": "grafana.home.dohrm.fr",       "type": "A", "value": "100.64.0.1" },
+      { "name": "alertmanager.home.dohrm.fr",  "type": "A", "value": "100.64.0.1" },
+      { "name": "metrics.home.dohrm.fr",       "type": "A", "value": "100.64.0.1" },
+      { "name": "vmalert.home.dohrm.fr",       "type": "A", "value": "100.64.0.1" },
+      { "name": "rustfs.home.dohrm.fr",        "type": "A", "value": "100.64.0.1" },
+      { "name": "s3-dev.home.dohrm.fr",        "type": "A", "value": "100.64.0.1" },
+
+      { "name": "ai.home.dohrm.fr",            "type": "A", "value": "100.64.0.1" },
+      { "name": "llm-api.home.dohrm.fr",       "type": "A", "value": "100.64.0.1" },
+      { "name": "llm-api-code.home.dohrm.fr",  "type": "A", "value": "100.64.0.1" },
+      { "name": "sd-api.home.dohrm.fr",        "type": "A", "value": "100.64.0.1" },
+      { "name": "stt-api.home.dohrm.fr",       "type": "A", "value": "100.64.0.1" },
+      { "name": "embedding-api.home.dohrm.fr", "type": "A", "value": "100.64.0.1" },
+      { "name": "ha.home.dohrm.fr",            "type": "A", "value": "100.64.0.1" },
+      { "name": "wger.home.dohrm.fr",          "type": "A", "value": "100.64.0.1" }
     ]
 
 ---
@@ -75,8 +89,35 @@ spec:
               command: ["sh", "-c"]
               args:
                 - |
-                  cp /config/dns.json /host-etc-headscale/dns.json
-                  echo "DNS records synced to /etc/headscale/dns.json"
+                  set -e
+                  SRC=/config/dns.json
+                  DST=/host-etc-headscale/dns.json
+
+                  # Garde-fou : ce job ÉCRASE le DNS de tout le tailnet. Un
+                  # ConfigMap vide ou tronqué rendrait injoignables tous les
+                  # services internes. On refuse de copier ce qui ne ressemble
+                  # pas à une liste JSON non vide.
+                  if [ ! -s "$SRC" ]; then
+                    echo "ERREUR: $SRC vide ou absent, copie annulée" >&2
+                    exit 1
+                  fi
+                  case "$(tr -d ' \n\t' < "$SRC" | cut -c1-2)" in
+                    '[{') : ;;
+                    *) echo "ERREUR: $SRC n'est pas une liste JSON non vide, copie annulée" >&2; exit 1 ;;
+                  esac
+
+                  if cmp -s "$SRC" "$DST"; then
+                    echo "DNS déjà à jour ($(grep -c '"name"' "$SRC") records)"
+                    exit 0
+                  fi
+
+                  # `cp` et surtout PAS `mv` : cp écrit dans l'inode existante,
+                  # donc le watch fsnotify de headscale sur extra_records_path
+                  # voit un WRITE et recharge. Un `mv` remplacerait l'inode et
+                  # casserait le watch — headscale ne verrait plus les
+                  # changements jusqu'à son prochain redémarrage.
+                  cp "$SRC" "$DST"
+                  echo "DNS synchronisé: $(grep -c '"name"' "$DST") records"
               volumeMounts:
                 - name: config
                   mountPath: /config

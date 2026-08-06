@@ -1,0 +1,8 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rustfs
+  labels:
+    homelab.dohrm.fr/env: dev
+    homelab.dohrm.fr/tier: storage

@@ -1,0 +1,34 @@
+{{/*
+  Templates de notification partagés.
+
+  Objectif : qu'une alerte lue sur un téléphone contienne assez de contexte
+  pour décider s'il faut se lever — donc l'environnement, l'objet concerné et
+  la description, pas juste un nom de règle.
+*/}}
+
+{{ define "homelab.title" -}}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }} × {{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}
+{{- end }}
+
+{{ define "homelab.telegram" -}}
+<b>{{ if eq .Status "firing" }}🔥{{ else }}✅{{ end }} {{ .CommonLabels.alertname }}</b>
+{{ if .CommonLabels.severity }}Sévérité : <b>{{ .CommonLabels.severity }}</b>
+{{ end }}{{ if .CommonLabels.namespace }}Namespace : <code>{{ .CommonLabels.namespace }}</code>
+{{ end }}
+{{ range .Alerts -}}
+{{ if .Annotations.summary }}• {{ .Annotations.summary }}
+{{ end }}{{ if .Annotations.description }}  <i>{{ .Annotations.description }}</i>
+{{ end }}{{ if .Labels.node }}  nœud : <code>{{ .Labels.node }}</code>
+{{ end }}{{ if .Labels.pod }}  pod : <code>{{ .Labels.pod }}</code>
+{{ end }}
+{{ end -}}
+{{- end }}
+
+{{ define "homelab.discord" -}}
+{{ range .Alerts -}}
+**{{ .Annotations.summary }}**
+{{ if .Annotations.description }}{{ .Annotations.description }}
+{{ end }}
+{{ range .Labels.SortedPairs }}`{{ .Name }}`={{ .Value }} {{ end }}
+{{ end -}}
+{{- end }}

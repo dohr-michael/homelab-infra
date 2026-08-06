@@ -1,0 +1,78 @@
+##############################################################################
+# Création des buckets RustFS
+#
+# PBM ne crée pas son bucket : il échoue si le bucket n'existe pas. Ce Job
+# tourne en hook PostSync ArgoCD, donc après que le Deployment RustFS soit
+# Healthy, et se rejoue à chaque sync (idempotent : `s3api create-bucket`
+# retourne BucketAlreadyOwnedByYou qu'on avale).
+##############################################################################
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rustfs-create-buckets
+  namespace: rustfs
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: rustfs-create-buckets
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        role.homelab/rustfs: "true"
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: ai
+          effect: NoSchedule
+      containers:
+        - name: awscli
+          image: amazon/aws-cli:2.36.17
+          envFrom:
+            - secretRef:
+                name: rustfs-credentials
+          env:
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_EC2_METADATA_DISABLED
+              value: "true"
+            - name: ENDPOINT
+              value: http://rustfs.rustfs.svc.cluster.local:9000
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              # Le hook PostSync part dès que le Deployment est Healthy, mais
+              # RustFS peut mettre quelques secondes de plus à servir l'API S3.
+              for i in $(seq 1 30); do
+                if aws --endpoint-url "$ENDPOINT" s3api list-buckets >/dev/null 2>&1; then
+                  break
+                fi
+                echo "waiting for rustfs api ($i/30)..."
+                sleep 5
+              done
+
+              for b in mongodb-backups uploads; do
+                if aws --endpoint-url "$ENDPOINT" s3api head-bucket --bucket "$b" 2>/dev/null; then
+                  echo "bucket $b: exists"
+                else
+                  echo "bucket $b: creating"
+                  aws --endpoint-url "$ENDPOINT" s3api create-bucket --bucket "$b"
+                fi
+              done
+
+              echo "--- buckets ---"
+              aws --endpoint-url "$ENDPOINT" s3 ls
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi

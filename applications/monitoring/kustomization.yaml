@@ -1,0 +1,45 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: monitoring
+
+resources:
+  - 00-namespace.yaml
+  - 10-vmsingle.yaml
+  - 20-vmagent.yaml
+  - 30-node-exporter.yaml
+  - 35-kube-state-metrics.yaml
+  - 40-vmalert.yaml
+  - 50-alertmanager.yaml
+  - 60-grafana.yaml
+  - 70-ingress.yaml
+
+##############################################################################
+# Les configs vivent dans files/ et passent par configMapGenerator, pas par
+# des ConfigMaps écrits à la main : kustomize suffixe le nom d'un hash du
+# contenu et réécrit les références dans les Deployments. Conséquence utile :
+# modifier une règle d'alerte ou la config de scrape déclenche un vrai rollout
+# du pod, au lieu d'attendre que le kubelet remonte le volume.
+##############################################################################
+configMapGenerator:
+  - name: vmagent-scrape-config
+    files:
+      - scrape.yml=files/vmagent-scrape.yml
+  - name: vmalert-rules
+    files:
+      - alert-rules.yml=files/alert-rules.yml
+  - name: alertmanager-config
+    files:
+      - alertmanager.yml=files/alertmanager.yml
+  - name: alertmanager-templates
+    files:
+      - homelab.tmpl=files/homelab.tmpl
+  - name: grafana-datasources
+    files:
+      - datasource.yml=files/grafana-datasource.yml
+  - name: kube-state-metrics-crs
+    files:
+      - customresourcestate.yml=files/ksm-customresourcestate.yml
+
+generators:
+  - ksops-generator.yaml

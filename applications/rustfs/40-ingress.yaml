@@ -1,0 +1,50 @@
+##############################################################################
+# Ingress RustFS — console + API S3
+#
+# Le cluster est VPN-only (Headscale) et TLS est terminé en amont par Caddy,
+# d'où l'entrypoint `web` comme pour les autres apps du repo.
+#
+# Les deux hosts sont poussés vers OVH DNS par external-dns.
+##############################################################################
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rustfs-console
+  namespace: rustfs
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: rustfs.home.dohrm.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: rustfs
+                port:
+                  number: 9001
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rustfs-s3
+  namespace: rustfs
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: s3-dev.home.dohrm.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: rustfs
+                port:
+                  number: 9000

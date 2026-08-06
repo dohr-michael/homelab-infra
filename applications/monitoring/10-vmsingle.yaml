@@ -1,0 +1,136 @@
+##############################################################################
+# VictoriaMetrics single-node — stockage des métriques
+#
+# POURQUOI VICTORIAMETRICS ET PAS kube-prometheus-stack
+#   Prometheus seul demande 2-3 Go de RAM sur ce volume de séries ; vmsingle
+#   fait le même travail en ~300-500 Mo, avec la même compatibilité PromQL et
+#   les mêmes dashboards Grafana. Sur un cluster dont les nœuds de calcul font
+#   8 Go, ce n'est pas un détail d'optimisation.
+#
+# POURQUOI PAS L'OPÉRATEUR VICTORIAMETRICS
+#   L'opérateur apporte VMServiceScrape/VMRule, donc un CRD de plus à suivre.
+#   Ici la découverte se fait par annotation `prometheus.io/scrape` sur les
+#   Services et les Pods : chaque app déclare son scrape chez elle, sans CRD
+#   et sans toucher à une config centrale. Migration vers l'opérateur possible
+#   plus tard, les métriques sont identiques.
+#
+# PLACEMENT — gmk-ai-master (RAM et disque). Conséquence directe : quand le
+#   nœud maison tombe, on perd le monitoring. C'est précisément pourquoi il
+#   faut un canal d'alerte externe (Telegram/Discord sont hors cluster) et,
+#   à terme, un dead-man's switch. Voir le doc.
+##############################################################################
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vmsingle-data
+  namespace: monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path-retain
+  resources:
+    requests:
+      storage: 50Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmsingle
+  namespace: monitoring
+  labels:
+    app: vmsingle
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: vmsingle
+  template:
+    metadata:
+      labels:
+        app: vmsingle
+    spec:
+      priorityClassName: homelab-platform
+      nodeSelector:
+        role.homelab/monitoring: "true"
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: ai
+          effect: NoSchedule
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: vmsingle
+          image: victoriametrics/victoria-metrics:v1.149.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - -storageDataPath=/victoria-metrics-data
+            - -httpListenAddr=:8428
+            # 12 mois : le disque de gmk-ai-master le permet largement et ça
+            # rend les comparaisons année sur année possibles.
+            - -retentionPeriod=12
+            # Les cibles sont scrapées toutes les 30 s ; la déduplication
+            # évite de stocker deux points pour un même timestamp après un
+            # redémarrage de vmagent.
+            - -dedup.minScrapeInterval=30s
+            - -search.maxQueryDuration=60s
+            - -selfScrapeInterval=30s
+          ports:
+            - name: http
+              containerPort: 8428
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /victoria-metrics-data
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 3Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: vmsingle-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vmsingle
+  namespace: monitoring
+  labels:
+    app: vmsingle
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8428"
+spec:
+  type: ClusterIP
+  selector:
+    app: vmsingle
+  ports:
+    - name: http
+      port: 8428
+      targetPort: http
+      protocol: TCP

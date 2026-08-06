@@ -1,0 +1,47 @@
+##############################################################################
+# PriorityClasses
+#
+# Les VPS ont 8 Go de RAM. Sous pression mémoire, le kubelet évince par
+# priorité puis par dépassement des requests. Sans PriorityClass, MongoDB est
+# un candidat à l'éviction au même titre qu'Open WebUI.
+#
+# Ces classes sont volontairement SOUS system-cluster-critical (2000000000) :
+# on ne veut jamais évincer coredns ou traefik pour sauver une base.
+#
+# Usage :
+#   homelab-data      → MongoDB prod, ce qui perd des données si évincé
+#   homelab-platform  → monitoring, opérateurs, ArgoCD
+#   homelab-best-effort → dev, IA, tout ce qui peut sauter
+##############################################################################
+
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: homelab-data
+value: 1000000
+globalDefault: false
+description: >-
+  Charges avec état dont l'éviction cause une perte ou une resynchronisation
+  coûteuse (MongoDB prod). Évincées en dernier parmi les charges homelab.
+
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: homelab-platform
+value: 500000
+globalDefault: false
+description: >-
+  Plateforme : monitoring, opérateurs, contrôleurs. Doit survivre à la
+  pression mémoire causée par les charges applicatives.
+
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: homelab-best-effort
+value: 1000
+globalDefault: false
+description: >-
+  Dev, IA, expérimentations. Premières évincées sous pression.

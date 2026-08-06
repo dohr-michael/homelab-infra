@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: mongodb-operator
+
+resources:
+  - 00-namespace.yaml
+  - 10-crd.yaml # vendorisé depuis v1.23.0, ne pas éditer à la main
+  - 20-rbac.yaml
+  - 30-operator.yaml
+
+patches:
+  ##########################################################################
+  # ServerSideApply=true est OBLIGATOIRE, pas une optimisation.
+  #
+  # Le CRD perconaservermongodbs.psmdb.percona.com pèse 1,49 Mo. Un apply
+  # côté client stocke le manifeste dans l'annotation
+  # kubectl.kubernetes.io/last-applied-configuration, dont la limite est de
+  # 262 144 octets → le sync échouerait sur
+  # "metadata.annotations: Too long".
+  #
+  # Prune=false protège les CRDs : sans ça, supprimer l'Application
+  # mongodb-operator supprimerait les CRDs, donc en cascade tous les
+  # PerconaServerMongoDB et leurs PVC.
+  ##########################################################################
+  - target:
+      group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+    patch: |
+      - op: add
+        path: /metadata/annotations/argocd.argoproj.io~1sync-options
+        value: ServerSideApply=true,Prune=false
+
+generators:
+  - ksops-generator.yaml
