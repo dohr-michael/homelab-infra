@@ -240,6 +240,10 @@ spec:
         enabled: true
         schedule: "0 2 * * *"
         type: logical
+        # Obligatoire en pratique : l'opérateur refuse de réconcilier une tâche
+        # sans storageName ("there is no storage  in cluster"). Le CRD ne le
+        # marque pourtant pas required — aucun validateur statique ne l'attrape.
+        storageName: ovh-s3
         retention:
           count: 7
           type: count
@@ -250,6 +254,7 @@ spec:
         enabled: true
         schedule: "0 4 * * 0"
         type: physical
+        storageName: ovh-s3
         retention:
           count: 4
           type: count

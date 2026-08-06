@@ -19,6 +19,14 @@ CE QU'IL VÉRIFIE
     Les sous-arbres marqués `x-kubernetes-preserve-unknown-fields` sont ignorés,
     comme le fait l'apiserver.
 
+CE QU'IL NE PEUT PAS VÉRIFIER
+    Les exigences SÉMANTIQUES que le CRD n'encode pas. Exemple vécu le même
+    jour : `backup.tasks[].storageName` n'est pas dans la liste `required` du
+    CRD, mais l'opérateur refuse de réconcilier sans lui
+    ("there is no storage  in cluster"). Aucun validateur de schéma ne peut
+    l'attraper — seul le sync le révèle. D'où le contrôle de cohérence ajouté
+    plus bas pour ce cas précis.
+
 Usage :  ./infra/validate-crs.py            (depuis la racine du repo)
 """
 import sys
@@ -104,6 +112,28 @@ def walk(obj, sch, path, problems):
             problems.append(f"{path}: valeur {obj!r} hors enum {enum}")
 
 
+def semantic_checks(doc):
+    """Règles que le schéma du CRD n'exprime pas mais que l'opérateur impose."""
+    problems = []
+    spec = doc.get("spec") or {}
+    backup = spec.get("backup") or {}
+    storages = set((backup.get("storages") or {}).keys())
+    for i, task in enumerate(backup.get("tasks") or []):
+        sn = task.get("storageName")
+        where = f"spec.backup.tasks[{i}]({task.get('name','?')})"
+        if not sn:
+            problems.append(
+                f"{where}.storageName: MANQUANT — non 'required' dans le CRD, "
+                f"mais l'opérateur échoue sans (\"there is no storage\")"
+            )
+        elif sn not in storages:
+            problems.append(
+                f"{where}.storageName={sn!r} ne correspond à aucun "
+                f"spec.backup.storages ({sorted(storages)})"
+            )
+    return problems
+
+
 def main():
     schemas = load_schemas()
     if not schemas:
@@ -140,6 +170,7 @@ def main():
             problems = []
             spec_sch = sch.get("properties", {}).get("spec")
             walk(doc.get("spec"), spec_sch, "spec", problems)
+            problems += semantic_checks(doc)
             checked += 1
             name = doc.get("metadata", {}).get("name", "?")
             if problems:

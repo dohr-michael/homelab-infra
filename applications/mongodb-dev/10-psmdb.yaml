@@ -204,6 +204,8 @@ spec:
         enabled: true
         schedule: "0 */6 * * *"
         type: logical
+        # Obligatoire en pratique, bien que non "required" dans le CRD.
+        storageName: rustfs
         retention:
           count: 4
           type: count
