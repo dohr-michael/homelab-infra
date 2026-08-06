@@ -58,8 +58,9 @@ spec:
       w: majority
       wtimeout: 0
 
-  pmm:
-    enabled: false
+  # Pas de bloc `pmm:` — le CRD impose `pmm.image` dès que la clé est présente
+  # (spec.pmm.required = ['image']), même avec enabled: false. On ne s'en sert
+  # pas : les métriques viennent du sidecar mongodb_exporter vers VictoriaMetrics.
 
   sharding:
     enabled: false
