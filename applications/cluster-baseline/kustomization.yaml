@@ -9,6 +9,7 @@ resources:
   - 00-namespace.yaml
   - 10-storageclass.yaml
   - 20-priorityclasses.yaml
+  - 30-traefik-lb.yaml
 
 generators:
   - ksops-generator.yaml

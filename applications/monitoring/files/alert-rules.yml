@@ -142,35 +142,66 @@ groups:
     interval: 1m
     rules:
       ##########################################################################
-      # ⚠️ Ces alertes restent MUETTES tant que k3s n'expose pas les métriques
-      #    etcd : par défaut elles ne sont servies que sur 127.0.0.1:2381.
-      #    Il faut `etcd-expose-metrics: true` sur les nœuds control-plane
-      #    (voir docs/critical-app-readiness.md § « Métriques etcd »).
-      #    Avec 2 membres seulement, la santé d'etcd est LE point de fragilité
-      #    du cluster : perdre un membre suffit à perdre le quorum.
+      # Scrapées par le job `k3s-etcd` (découverte de nœuds → port 2381).
+      #
+      # Ces métriques n'existent QUE sur les nœuds ayant
+      # `etcd-expose-metrics: true` dans /etc/rancher/k3s/config.yaml — sinon
+      # k3s ne les sert que sur 127.0.0.1:2381. D'où EtcdMembersNotScraped,
+      # qui détecte le cas « membre bien présent mais aveugle ».
       ##########################################################################
-      - alert: EtcdNoLeader
-        expr: etcd_server_has_leader == 0
-        for: 2m
-        labels:
-          severity: critical
-        annotations:
-          summary: "etcd sans leader sur {{ $labels.instance }}"
-          description: >-
-            Le cluster Kubernetes est en lecture seule ou totalement
-            indisponible. Perte de quorum probable.
 
+      # Le compte de membres ne s'appuie PAS sur les métriques etcd mais sur
+      # kube-state-metrics : sinon un membre dont les métriques ne sont pas
+      # exposées serait compté comme absent, et l'alerte dirait « quorum
+      # fragile » alors que le quorum est parfaitement sain.
       - alert: EtcdQuorumFragile
-        expr: count(etcd_server_has_leader) < 3
+        expr: count(kube_node_role{role="etcd"}) < 3
         for: 30m
         labels:
           severity: warning
         annotations:
           summary: "Moins de 3 membres etcd ({{ $value }})"
           description: >-
-            Avec 2 membres, la majorité est de 2 : la panne d'UN nœud rend
-            l'API server indisponible. Cette alerte se taira quand le 3ᵉ nœud
-            OVH aura rejoint le cluster.
+            À 2 membres la majorité est de 2 : la panne d'UN nœud rend l'API
+            server indisponible. À 3, le cluster tolère la perte d'un nœud —
+            mais jamais deux, donc ne pas redémarrer deux serveurs à la fois.
+
+      # Un membre etcd non observé est un angle mort : il peut perdre son
+      # leader ou saturer son disque sans qu'aucune alerte ne se déclenche.
+      - alert: EtcdMembersNotScraped
+        expr: |
+          count(etcd_server_has_leader) < count(kube_node_role{role="etcd"})
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Des membres etcd ne sont pas scrapés"
+          description: >-
+            Il manque `etcd-expose-metrics: true` dans
+            /etc/rancher/k3s/config.yaml sur au moins un control-plane, puis un
+            `systemctl restart k3s`. Sans ça la santé de ce membre est invisible.
+
+      - alert: EtcdNoLeader
+        expr: etcd_server_has_leader == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "etcd sans leader sur {{ $labels.node }}"
+          description: >-
+            Le cluster Kubernetes est en lecture seule ou totalement
+            indisponible. Perte de quorum probable.
+
+      - alert: EtcdFrequentLeaderChanges
+        expr: |
+          increase(etcd_server_leader_changes_seen_total[1h]) > 3
+        labels:
+          severity: warning
+        annotations:
+          summary: "Élections etcd répétées ({{ $value }} en 1 h)"
+          description: >-
+            Symptôme classique d'un disque lent ou d'un réseau instable entre
+            membres — ici le mesh Headscale entre régions OVH.
 
       - alert: EtcdHighFsyncDuration
         expr: |
@@ -181,10 +212,27 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "fsync WAL etcd lent sur {{ $labels.instance }}"
+          summary: "fsync WAL etcd lent sur {{ $labels.node }}"
           description: >-
             Le disque du control-plane n'arrive plus à suivre etcd. Cause
             fréquente d'élections en boucle.
+
+      # etcd passe en lecture seule quand la base atteint son quota, et le
+      # cluster entier devient non modifiable. À 80 % il reste le temps de
+      # lancer un `etcdctl defrag`.
+      - alert: EtcdDatabaseSizeHigh
+        expr: |
+          (
+            etcd_mvcc_db_total_size_in_bytes / etcd_server_quota_backend_bytes
+          ) > 0.80
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Base etcd à {{ $value | humanizePercentage }} du quota sur {{ $labels.node }}"
+          description: >-
+            Au quota, etcd bascule en lecture seule : plus aucun changement
+            Kubernetes n'est possible. Défragmenter avant d'y arriver.
 
   # ==========================================================================
   - name: workloads
@@ -272,6 +320,38 @@ groups:
           description: >-
             Avec selfHeal activé, un OutOfSync persistant veut dire que le
             sync échoue en boucle.
+
+      ##########################################################################
+      # Garde-fou contre la régression du 2026-08-06.
+      #
+      # Un Service NodePort ou LoadBalancer ouvre un port sur l'IP PUBLIQUE de
+      # chaque nœud, par un chemin (nat/PREROUTING puis FORWARD) que les règles
+      # ufw — qui sont dans INPUT — ne voient pas. C'est comme ça que Traefik
+      # s'est retrouvé joignable depuis Internet, contournant le filtre
+      # 100.64.0.0/16 de Caddy, avec n8n et ArgoCD exposés.
+      #
+      # Seul `kube-system/traefik` est légitime, et seulement parce qu'il est
+      # désormais bridé par loadBalancerSourceRanges +
+      # allocateLoadBalancerNodePorts: false
+      # (voir applications/cluster-baseline/30-traefik-lb.yaml).
+      #
+      # Tout nouveau Service de ce type doit être un choix conscient.
+      ##########################################################################
+      - alert: UnexpectedPubliclyExposedService
+        expr: |
+          kube_service_spec_type{type=~"NodePort|LoadBalancer"}
+            unless on (namespace, service)
+          kube_service_spec_type{namespace="kube-system", service="traefik"}
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.namespace }}/{{ $labels.service }} de type {{ $labels.type }}"
+          description: >-
+            Ce type de Service expose un port sur l'IP publique des nœuds en
+            contournant ufw. Vérifier avec un scan externe, et poser
+            loadBalancerSourceRanges + allocateLoadBalancerNodePorts:false, ou
+            repasser le Service en ClusterIP.
 
       - alert: ArgoCDAppDegraded
         expr: argocd_app_health_status{health_status="Degraded"} == 1

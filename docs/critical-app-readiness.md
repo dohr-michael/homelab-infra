@@ -1,6 +1,7 @@
 # Préparation du cluster à une application critique
 
-Statut : socle en place dans le repo, **prérequis nœuds et OVH à exécuter avant mise en service**.
+Statut : cluster k3s à 3 nœuds **en place**, manifestes prêts dans le repo,
+**commande OVH Object Storage et déploiement restant à faire**.
 Dernière révision : 2026-08-06.
 
 Ce document couvre l'accueil d'une application déployée deux fois (DEV et PROD) avec
@@ -16,13 +17,15 @@ Constats faits sur le cluster réel, pas sur le contenu du repo.
 | Constat | Gravité | Statut |
 |---|---|---|
 | `argocd-repo-server` en crashloop depuis **28 jours** → les 7 Applications en sync `Unknown`, aucun déploiement depuis 28 jours | bloquant | **corrigé** (pod recréé) |
-| etcd à **2 membres** : la majorité est de 2, donc perdre 1 VPS rend l'API server indisponible | bloquant | 3ᵉ VPS **commandé le 2026-08-06** (4 vCPU / 8 Go), attend la livraison |
+| etcd à **2 membres** : la majorité est de 2, donc perdre 1 VPS rend l'API server indisponible | bloquant | **résolu le 2026-08-06** — `vps-4541d883` (100.64.0.11) a rejoint, etcd est à 3 membres |
 | Snapshots etcd **locaux uniquement**, sur `vps-17435151` seul | bloquant | manifeste prêt, attend le bucket OVH |
 | `vps-17435151` taint `CriticalAddonsOnly=true:NoSchedule` → rien ne s'y schedule, tout est sur `vps-a7c3e9b8` | élevée | **contourné** par toleration explicite dans les CR MongoDB |
 | Aucun monitoring ni alerting (seul `metrics-server`) | élevée | **ajouté** (`applications/monitoring`) |
 | `local-path` en `reclaimPolicy: Delete` : supprimer un PVC efface les données | élevée | **corrigé** (`local-path-retain`) |
-| Métriques etcd non exposées (`127.0.0.1:2381` seulement) | moyenne | à activer sur les nœuds |
+| Métriques etcd non exposées (`127.0.0.1:2381` seulement) | moyenne | **1 nœud sur 3** — activé sur `vps-4541d883`, reste à faire sur les deux anciens (§4.6) |
 | ns `tinypaw` et `ai` présents dans le cluster, absents de git | faible | à réconcilier ou assumer |
+| **Traefik joignable depuis Internet** : ServiceLB (hostPort + NodePort) contourne ufw, donc le filtre `100.64.0.0/16` de Caddy. n8n et ArgoCD étaient publics | **critique** | **corrigé le 2026-08-06** — `loadBalancerSourceRanges` + `allocateLoadBalancerNodePorts: false` (`cluster-baseline/30-traefik-lb.yaml`) |
+| **`vps-17435151` sans pare-feu** : `ufw` installé mais `inactive`, API server (6443) et kubelet (10250) sur Internet en v4 et v6 | **critique** | **corrigé le 2026-08-06** — `infra/fixes/ufw-baseline.sh` |
 | `gpu-worker-1060` NotReady depuis longtemps | faible | hors sujet ici |
 
 ### Cause racine du blocage ArgoCD, pour mémoire
@@ -40,6 +43,7 @@ mode de panne.
 |---|---|---|---|---|
 | `vps-a7c3e9b8` | 4 | 8 Go | 42 Go | control-plane + etcd, porte presque tout |
 | `vps-17435151` | 4 | 8 Go | 64 Go | control-plane + etcd, **tainté** |
+| `vps-4541d883` | 4 | 8 Go | — | control-plane + etcd, rejoint le 2026-08-06, non tainté |
 | `gmk-ai-master` | 32 | 48 Go | 950 Go | agent GPU, taint `dedicated=ai` |
 | `gpu-worker-1060` | — | — | — | NotReady |
 
@@ -48,35 +52,39 @@ tenir deux environnements MongoDB, et `gmk-ai-master` est la seule vraie capacit
 
 ---
 
-## 2. Topologie cible
+## 2. Topologie
 
-### Aujourd'hui (2 VPS + nœud maison)
+### Cible atteinte le 2026-08-06
+
+Les trois VPS OVH sont en place et labellisés. Le plan transitoire qui plaçait un
+membre de production sur le nœud maison n'a jamais eu à être appliqué : le 3ᵉ VPS est
+arrivé avant le déploiement de MongoDB.
 
 ```
-                    ┌─ vps-a7c3e9b8 ──── mongo-prod-rs0-0   (votant)
-MongoDB PROD  RS ───┼─ vps-17435151 ──── mongo-prod-rs0-1   (votant)
-  3 votants         └─ gmk-ai-master ─── mongo-prod-rs0-2   (votant)
-                                          → quorum 2/3, survit à la perte d'1 nœud
+                    ┌─ vps-a7c3e9b8  100.64.0.1   mongo-prod-rs0-0   (votant)
+MongoDB PROD  RS ───┼─ vps-17435151  100.64.0.3   mongo-prod-rs0-1   (votant)
+  3 votants         └─ vps-4541d883  100.64.0.11  mongo-prod-rs0-2   (votant)
+                       3 régions OVH → quorum 2/3, survit à la perte d'1 nœud
 
-MongoDB DEV   RS 1 membre ─ gmk-ai-master
-RustFS (S3 dev)           ─ gmk-ai-master
-Monitoring (VM+Grafana)   ─ gmk-ai-master
+etcd          ── les 3 mêmes VPS (control-plane + etcd)
+MongoDB DEV   ── RS 1 membre        ─ gmk-ai-master
+RustFS (S3 dev)                     ─ gmk-ai-master
+Monitoring (VM+Grafana)             ─ gmk-ai-master
 
 Backups PROD  ─── PBM ──→ OVH Object Storage (logique + physique + PITR)
 Backups DEV   ─── PBM ──→ RustFS in-cluster
 Snapshots etcd ───────→ OVH Object Storage
 ```
 
-Le 3ᵉ membre est un **membre porteur de données**, pas un arbitre. Un arbitre combiné
+Les membres sont des **membres porteurs de données**, pas d'arbitre. Un arbitre combiné
 à `w: majority` est un anti-pattern MongoDB documenté : sur panne d'un porteur de
-données, la durabilité de l'écriture n'est plus garantie. Un vrai membre donne à la
-fois le vote et une 3ᵉ copie.
+données, la durabilité de l'écriture n'est plus garantie.
 
-### Après l'arrivée du 3ᵉ VPS OVH
+`gmk-ai-master` ne porte plus que dev, RustFS et le monitoring. L'option d'en faire un
+**membre caché** du RS de production (4ᵉ copie chez soi, sans droit de vote) reste
+ouverte — bloc YAML prêt ci-dessous.
 
-Les 3 membres de prod passent sur les 3 VPS OVH, en zones géographiques distinctes.
-`gmk-ai-master` redevient dev + monitoring. etcd passe à 3 membres, donc tolère enfin la
-perte d'un nœud.
+### Conséquences de la bascule
 
 Bénéfice secondaire non évident : les écritures en `w: majority` **accélèrent**. Tant
 qu'un membre est à la maison, la majorité peut avoir à l'attendre sur un lien
@@ -84,8 +92,8 @@ résidentiel ; entre trois régions OVH on reste sur le backbone. Attendre plut�
 de RTT inter-régions que les 11-30 ms observés vers la maison, et surtout une gigue bien
 plus faible.
 
-Option à considérer à ce moment-là, rendue intéressante par le fait qu'aucun VPS n'a de
-RAM en réserve : garder `gmk-ai-master` comme **membre caché** du replica set. `votes: 0`,
+Option toujours ouverte, rendue intéressante par le fait qu'aucun VPS n'a de RAM en
+réserve : garder `gmk-ai-master` comme **membre caché** du replica set. `votes: 0`,
 `priority: 0`, invisible du routage des lectures clientes — donc sans effet sur les
 élections ni sur la majorité, mais ça donne une 4ᵉ copie des données, chez soi, sur
 950 Go de disque. Le bloc à ajouter dans `replsets[0]` :
@@ -179,8 +187,9 @@ D'où l'annotation `ServerSideApply=true,Prune=false` posée par patch kustomize
 
 ### 4.1 Commande OVH
 
-**Nœud de calcul — ✅ commandé le 2026-08-06.** 4 vCPU / 8 Go, comme les deux autres,
-dans une région distincte.
+**Nœud de calcul — ✅ livré et intégré le 2026-08-06** : `vps-4541d883`, 100.64.0.11,
+4 vCPU / 8 Go, Ubuntu 24.04.4, k3s v1.34.3+k3s1. Procédure suivie :
+`docs/add-k3s-node.md`.
 
 Conséquence à assumer : **aucun nœud du cluster n'a de RAM en réserve.** Les trois VPS
 seront à 8 Go, le nœud maison reste le seul à avoir de la marge. Deux corollaires qui
@@ -215,13 +224,17 @@ Ajouter une lifecycle rule sur `homelab-mongodb-backups` (transition vers Infreq
 Access après 30 j, expiration après 180 j) — PBM gère sa propre rétention par nombre,
 la lifecycle est le filet de sécurité contre les orphelins.
 
-### 4.2 Labels de nœuds
+### 4.2 Labels de nœuds — ✅ fait le 2026-08-06
 
-Rien ne se schedule avant ça : tous les CR sélectionnent sur `role.homelab/*`.
+Rien ne se schedule sans ça : tous les CR sélectionnent sur `role.homelab/*`.
 
 ```bash
 KUBECONFIG=~/.kube/home.dohrm ./infra/label-nodes.sh
 ```
+
+État constaté : `mongodb-prod` sur les 3 VPS, `mongodb-dev` / `rustfs` / `monitoring`
+sur `gmk-ai-master`. À rejouer après toute modification de `infra/label-nodes.sh`, qui
+reste la source de vérité.
 
 ### 4.3 Renseigner les secrets
 
@@ -252,36 +265,18 @@ Lire le mot de passe Grafana généré :
 sops -d applications/monitoring/grafana.secret.yaml | grep admin-password
 ```
 
-### 4.4 Configuration des nœuds k3s (accès SSH requis)
+### 4.4 Snapshots etcd vers OVH — le piège de la restauration
 
-Ces changements ne sont pas versionnables dans git. Sur **chaque nœud control-plane**,
-dans `/etc/rancher/k3s/config.yaml` :
+La configuration par nœud est détaillée en **§4.6** (elle diffère selon les nœuds : le
+nouveau a déjà son `config.yaml`, les deux anciens portent tout en flags systemd).
 
-```yaml
-# Snapshots etcd vers OVH. Les credentials viennent du Secret SOPS déjà déployé,
-# donc rien de sensible n'atterrit sur le disque du nœud.
-etcd-s3: true
-etcd-s3-config-secret: etcd-s3-config
-etcd-snapshot-schedule-cron: "0 */6 * * *"
-etcd-snapshot-retention: 10
+Un point à retenir avant d'en dépendre :
 
-# Expose les métriques etcd au-delà de 127.0.0.1, sinon les alertes etcd du
-# groupe `etcd` restent muettes en permanence.
-etcd-expose-metrics: true
-```
-
-puis `systemctl restart k3s`.
-
-> **Séquencer maintenant, pas plus tard.** Avec 2 membres etcd, redémarrer un serveur
-> casse temporairement le quorum. À faire **avant** que des données de production
-> soient sur le cluster, un nœud à la fois, en vérifiant
-> `kubectl get nodes` entre les deux.
-
-> **Le Secret ne sert pas à la restauration.** Pendant un restore, l'apiserver est
-> arrêté : k3s ne peut pas lire le Secret. Il faut passer
-> `--etcd-s3-access-key` / `--etcd-s3-secret-key` en flags. **Garder ces credentials
-> hors du cluster** (gestionnaire de mots de passe), sinon la sauvegarde est
-> inatteignable exactement le jour où on en a besoin.
+> **Le Secret `etcd-s3-config` ne sert PAS à la restauration.** Pendant un restore
+> l'apiserver est arrêté : k3s ne peut donc pas lire le Secret. Il faut passer
+> `--etcd-s3-access-key` / `--etcd-s3-secret-key` en flags sur la ligne de commande.
+> **Garder ces credentials hors du cluster** (gestionnaire de mots de passe), sinon la
+> sauvegarde devient inatteignable exactement le jour où on en a besoin.
 
 ### 4.5 Ordre de déploiement
 
@@ -298,6 +293,66 @@ Les Applications sont découvertes automatiquement par l'ApplicationSet au push 
 En pratique : pousser `cluster-baseline` et `mongodb-operator` d'abord, attendre
 `Healthy`, puis le reste. Sans ça les autres apps échouent en boucle quelques minutes
 avant de converger — bruyant, pas cassant.
+
+---
+
+### 4.6 Exposer les métriques etcd sur les deux anciens nœuds
+
+`vps-4541d883` a `etcd-expose-metrics: true` (posé par `new-node-bootstrap.sh`) et sert
+bien ses 646 séries `etcd_*` sur `100.64.0.11:2381`. Les deux anciens nœuds, non : k3s
+les garde sur `127.0.0.1:2381`. Vérifié le 2026-08-06 depuis `vps-a7c3e9b8` :
+
+```
+100.64.0.1     INJOIGNABLE
+100.64.0.3     INJOIGNABLE
+100.64.0.11    OK (646 séries etcd_*)
+```
+
+Conséquence concrète : deux membres etcd sur trois sont des angles morts — ils peuvent
+perdre leur leader ou saturer leur disque sans qu'aucune alerte ne parte. C'est l'objet
+de l'alerte `EtcdMembersNotScraped`.
+
+**C'est maintenant que ça devient faisable.** Ces deux nœuds portent leur configuration
+en flags dans l'unit systemd, sans `config.yaml`. On en crée un : k3s le lit en plus des
+flags, et comme aucune de ces clés n'y figure, il n'y a pas de conflit.
+
+Sur **chacun** des deux anciens nœuds, un à la fois :
+
+```bash
+sudo tee /etc/rancher/k3s/config.yaml >/dev/null <<'EOF'
+# Complète les flags de l'unit systemd — aucune clé en conflit avec eux.
+etcd-expose-metrics: true
+
+# Passer à true seulement quand le bucket OVH existe ET que le Secret
+# etcd-s3-config est déployé (applications/cluster-baseline).
+etcd-s3: false
+etcd-s3-config-secret: etcd-s3-config
+etcd-snapshot-schedule-cron: "0 */6 * * *"
+etcd-snapshot-retention: 10
+EOF
+sudo chmod 600 /etc/rancher/k3s/config.yaml
+sudo systemctl restart k3s
+```
+
+Puis **attendre que le nœud soit Ready avant de passer au suivant** :
+
+```bash
+kubectl get nodes -w
+```
+
+> Cette opération n'était pas sûre avant aujourd'hui : à 2 membres etcd, redémarrer un
+> serveur cassait le quorum et rendait l'API server indisponible. À 3 membres, un
+> redémarrage roulant est sans danger — **à condition de n'en redémarrer qu'un à la
+> fois**. Perdre deux membres sur trois, c'est perdre la majorité.
+
+Vérification, depuis n'importe quel nœud :
+
+```bash
+for ip in 100.64.0.1 100.64.0.3 100.64.0.11; do
+  printf "%-14s " "$ip"
+  curl -s -m4 "http://$ip:2381/metrics" | grep -c "^etcd_" || echo INJOIGNABLE
+done
+```
 
 ---
 
@@ -397,38 +452,26 @@ les deux). Vérifier aussi les cibles réellement scrapées sur
 
 ---
 
-## 6. Arrivée du 3ᵉ nœud OVH
+## 6. Intégration du 3ᵉ nœud OVH — ✅ fait le 2026-08-06
 
-1. Joindre le nœud comme **server** (control-plane + etcd) : procédure complète et
-   scriptée dans **`docs/add-k3s-node.md`** + `infra/new-node-bootstrap.sh`. etcd passe
-   à 3 membres, c'est là que le cluster devient réellement tolérant à une panne.
-2. Vérifier : `kubectl get nodes` → 3 control-planes `Ready`.
-3. Déplacer le membre MongoDB de prod hors du nœud maison, **un seul changement à la
-   fois** :
+`vps-4541d883` (100.64.0.11) a rejoint comme server. etcd est à 3 membres, le cluster
+tolère désormais la perte d'un nœud. Procédure et relevé de configuration :
+`docs/add-k3s-node.md`.
 
-```bash
-# 1. Labelliser le nouveau nœud
-kubectl label node <nouveau-noeud> role.homelab/mongodb-prod=true
+**La migration de membre MongoDB décrite ici initialement n'a pas eu lieu, et c'est une
+bonne nouvelle** : le nœud est arrivé avant le déploiement de MongoDB, donc il n'y a
+jamais eu de membre de production sur le nœud maison à déplacer. Les labels pointent
+directement sur la topologie cible.
 
-# 2. Retirer le label du nœud maison
-kubectl label node gmk-ai-master role.homelab/mongodb-prod-
+Ce qui reste, côté nœuds : **§4.6**, exposer les métriques etcd sur les deux anciens
+serveurs. C'est désormais sûr — ça ne l'était pas à 2 membres.
 
-# 3. Supprimer le pod concerné : l'opérateur le reconstruit sur le nouveau nœud
-#    et le nouveau membre se resynchronise depuis le RS (initial sync).
-kubectl -n mongodb-prod delete pod mongo-prod-rs0-2
-```
-
-4. Le PVC de l'ancien membre reste en `Released` sur le nœud maison
-   (`reclaimPolicy: Retain`, c'est voulu). Le supprimer **seulement après** avoir
-   confirmé que le RS est à 3 membres sains :
-
-```bash
-kubectl -n mongodb-prod get psmdb mongo-prod -o jsonpath='{.status.ready}/{.status.size}'
-```
-
-5. Mettre `PROD_NODES` à jour dans `infra/label-nodes.sh` et commiter — c'est la source
-   de vérité, elle ne doit pas diverger du cluster.
-6. Attendre que `EtcdQuorumFragile` se taise : elle est écrite pour ça.
+Si un membre doit être déplacé plus tard (remplacement de VPS, panne définitive), la
+manœuvre est : labelliser la cible, retirer le label de la source, supprimer le pod
+concerné — l'opérateur le reconstruit ailleurs et le membre se resynchronise depuis le
+RS. Un seul changement à la fois, et le PVC de l'ancien membre reste en `Released`
+(`reclaimPolicy: Retain`) : ne le supprimer qu'après avoir confirmé
+`kubectl -n mongodb-prod get psmdb mongo-prod -o jsonpath='{.status.ready}/{.status.size}'`.
 
 ---
 
@@ -438,6 +481,7 @@ Par ordre de valeur décroissante.
 
 | Sujet | Pourquoi ça compte | Effort |
 |---|---|---|
+| **Vérifier l'exposition réseau après chaque changement d'ingress** | L'audit du 2026-08-06 a montré que le « VPN-only » annoncé était faux : ServiceLB ouvrait Traefik sur Internet. L'alerte `UnexpectedPubliclyExposedService` couvre l'apparition d'un Service NodePort/LoadBalancer, mais pas un changement de règles ufw ni un hostPort direct. Un scan externe périodique (le prompt d'audit IA peut le porter) fermerait la boucle. | faible |
 | **Dead-man's switch externe** | Le monitoring est sur le nœud maison. S'il tombe, plus aucune alerte n'est émise — et le silence est indistinguable de « tout va bien ». L'alerte `Watchdog` et le receiver `null` sont déjà en place : il reste à faire consommer ce flux par un service externe (Healthchecks.io, ntfy hébergé ailleurs, ou une Lambda). **C'est le trou le plus important qui reste, et le 3ᵉ VPS commandé à 8 Go ne le refermera pas** : il n'y aura pas de nœud OVH capable d'héberger le monitoring, donc ce n'est plus un contournement temporaire. | faible |
 | **Tester la restauration etcd** | Les snapshots partiront chez OVH, mais un snapshot jamais restauré ne vaut rien. À faire une fois, sur un cluster jetable. | moyen |
 | `NetworkPolicy` | k3s applique les NetworkPolicy nativement. Aujourd'hui tout pod peut joindre MongoDB. Un `default-deny` sur `mongodb-prod` + un allow explicite depuis le namespace de l'app réduit franchement la surface. | faible |

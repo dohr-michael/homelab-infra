@@ -1,8 +1,17 @@
 # Ajouter un nœud k3s server au cluster
 
-Procédure pour le 3ᵉ VPS OVH (commandé le 2026-08-06, 4 vCPU / 8 Go). Le nœud
-rejoint comme **server** (control-plane + etcd), pas comme agent : c'est ce qui fait
-passer etcd de 2 à 3 membres et rend enfin le cluster tolérant à une panne.
+Procédure pour ajouter un nœud **server** (control-plane + etcd), pas un agent :
+c'est le rôle server qui fait grossir le quorum etcd.
+
+> **Appliquée avec succès le 2026-08-06** pour `vps-4541d883` (100.64.0.11,
+> 4 vCPU / 8 Go, Ubuntu 24.04.4, k3s v1.34.3+k3s1). etcd est passé de 2 à 3 membres.
+> Le nœud a reçu exactement l'IP prévue par l'allocation séquentielle de Headscale, et
+> a rejoint sans taint, comme voulu.
+>
+> Un seul défaut relevé après coup : dans la version initiale du script, deux
+> commentaires du `config.yaml` généré avaient perdu des mots. Cause — les backticks
+> dans un heredoc **non quoté** sont exécutés comme substitution de commande. Corrigé,
+> avec un garde en commentaire pour ne pas le réintroduire.
 
 Le gros du travail est fait par `infra/new-node-bootstrap.sh`. Ce document explique
 ce qu'il fait, pourquoi, et les deux ou trois choses qu'il ne peut pas faire.

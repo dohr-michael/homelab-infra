@@ -62,6 +62,29 @@ scrape_configs:
       - source_labels: [__meta_kubernetes_node_name]
         target_label: node
 
+  # etcd. Il n'y a PAS de Service Kubernetes devant etcd dans k3s : il écoute
+  # directement sur le port 2381 du nœud. On part donc de la découverte de nœuds
+  # et on réécrit l'adresse.
+  #
+  # Ne fonctionne que sur les nœuds ayant `etcd-expose-metrics: true` : par
+  # défaut k3s ne sert ces métriques que sur 127.0.0.1:2381, donc rien à
+  # scraper. Au 2026-08-06, seul vps-4541d883 l'a — voir l'alerte
+  # EtcdMembersNotScraped, qui existe précisément pour signaler ce trou.
+  - job_name: k3s-etcd
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      # Uniquement les nœuds porteurs d'etcd.
+      - source_labels: [__meta_kubernetes_node_label_node_role_kubernetes_io_etcd]
+        action: keep
+        regex: "true"
+      - source_labels: [__meta_kubernetes_node_address_InternalIP]
+        regex: (.+)
+        target_label: __address__
+        replacement: "$1:2381"
+      - source_labels: [__meta_kubernetes_node_name]
+        target_label: node
+
   # ------------------------------------------------- découverte générique
   - job_name: kubernetes-service-endpoints
     kubernetes_sd_configs:

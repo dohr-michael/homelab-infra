@@ -27,7 +27,11 @@ for app in "${apps[@]}"; do
   # (../../bases/...) restent résolvables.
   if [ ! -d "$tmp/repo" ]; then
     mkdir -p "$tmp/repo"
-    git ls-files -z | rsync -a --files-from=- --from0 . "$tmp/repo/" 2>/dev/null \
+    # --others --exclude-standard : inclut les fichiers pas encore commités.
+    # Sans ça, un manifeste tout juste créé n'est pas copié et le build échoue
+    # sur un « no such file or directory » trompeur.
+    git ls-files -z --cached --others --exclude-standard \
+      | rsync -a --files-from=- --from0 . "$tmp/repo/" 2>/dev/null \
       || cp -r applications bases "$tmp/repo/" 2>/dev/null
   fi
   target="$tmp/repo/$app"

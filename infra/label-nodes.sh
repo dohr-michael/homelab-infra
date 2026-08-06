@@ -21,10 +21,13 @@ KUBECTL=(kubectl)
 [ "${1:-}" = "--dry-run" ] && KUBECTL=(kubectl --dry-run=client)
 
 # --- Membres du replica set MongoDB de PRODUCTION -------------------------
-# État actuel : 2 VPS OVH + le nœud maison, pour avoir 3 votants et donc un
-# quorum qui survit à la perte d'un nœud.
-# À l'arrivée du 3ᵉ VPS OVH : ajouter le nouveau nœud ici, retirer
-# gmk-ai-master, puis voir docs/critical-app-readiness.md.
+# Topologie cible atteinte le 2026-08-06 : 3 VPS OVH, un membre par nœud, en
+# régions distinctes. `gmk-ai-master` (le nœud maison) a été retiré : il ne
+# porte plus que dev, RustFS et le monitoring.
+#
+# Ces trois nœuds sont aussi les 3 membres etcd, donc le cluster tolère
+# désormais la perte d'un nœud — mais jamais deux : ne pas redémarrer deux
+# serveurs en même temps.
 PROD_NODES=(vps-a7c3e9b8 vps-17435151 vps-4541d883)
 
 # --- MongoDB de DEV, RustFS, monitoring -----------------------------------

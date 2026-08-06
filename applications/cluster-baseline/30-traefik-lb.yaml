@@ -1,0 +1,145 @@
+##############################################################################
+# Restreindre l'accès au LoadBalancer Traefik au tailnet Headscale
+#
+# ✅ APPLIQUÉ ET VÉRIFIÉ EN PRODUCTION LE 2026-08-06.
+#   Déplacé depuis infra/fixes/ vers GitOps une fois prouvé. Le
+#   HelmChartConfig précédent était fait à la main et absent du repo — c'est
+#   exactement la dérive qu'on évite en le versionnant ici.
+#   Le dossier infra/fixes/ garde le compte rendu de l'audit.
+#
+# ------------------------------------------------------------------ POURQUOI
+# `klipper-lb` (le ServiceLB de k3s) déploie un DaemonSet svclb-traefik avec
+# hostPort 81/444 sur chaque nœud. Le trafic est DNAT-é dans la table `nat` puis
+# traverse `FORWARD` : les règles DENY d'ufw, qui sont dans `INPUT`, ne le voient
+# jamais. Résultat mesuré le 2026-08-06 depuis Internet :
+#
+#     curl -H 'Host: n8n.home.dohrm.fr'  http://51.178.19.49:81/    -> 200
+#     curl -H 'Host: argo.home.dohrm.fr' http://51.178.19.49:81/    -> 200
+#     curl -H 'Host: n8n.home.dohrm.fr'  http://51.178.19.49:30594/ -> 200
+#
+# Joindre Traefik en direct contourne Caddy, donc contourne le filtre
+# `remote_ip 100.64.0.0/16` qui est la seule protection des services internes.
+#
+# --------------------------------------------------------------- COMMENT
+# `klipper-lb` lit la variable SRC_RANGES, peuplée depuis
+# `spec.loadBalancerSourceRanges` du Service. Actuellement `0.0.0.0/0`, d'où
+# l'ouverture totale. Son script d'entrée fait :
+#
+#     for src_range in ${SRC_RANGES//,/ }; do
+#       iptables -t filter -I FORWARD -s ${src_range} --dport ${DEST_PORT} -j ACCEPT
+#     ...
+#     iptables -t filter -A FORWARD -d ${dest_ip}/32 --dport ${DEST_PORT} -j DROP
+#
+# Donc : ACCEPT pour les plages listées, DROP pour tout le reste.
+#
+# ⚠️ CE FICHIER DOIT CONTENIR AUSSI LA CONFIG EXISTANTE
+#   `valuesContent` est une chaîne unique : elle remplace intégralement la
+#   précédente. Le HelmChartConfig déjà en place dans le cluster (créé à la main,
+#   absent de git) fixe `ports.web.exposedPort: 81` et
+#   `ports.websecure.exposedPort: 444`. Les omettre ici ferait repasser Traefik
+#   sur 80/443 — collision directe avec Caddy, et plus rien ne répond.
+#
+# ⚠️ CE FICHIER TOUCHE LE CHEMIN D'ENTRÉE DE TOUS LES SERVICES
+#   Toute modification ici peut couper l'accès à l'ensemble des applications.
+#   Vérifier après chaque changement, depuis le VPN :
+#       curl -sI https://n8n.home.dohrm.fr | head -1
+#   et depuis l'extérieur, que 81/444 restent fermés.
+##############################################################################
+
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    service:
+      enabled: true
+      type: LoadBalancer
+      spec:
+        # INDISPENSABLE, et pas couvert par loadBalancerSourceRanges.
+        #
+        # Mesuré le 2026-08-06 : après avoir posé les plages sources, 81 et 444
+        # étaient bien fermés depuis Internet, mais les NodePorts restaient
+        # ouverts et le contournement fonctionnait toujours :
+        #     curl -H 'Host: n8n...' http://51.178.19.49:30594/  -> 200
+        # `loadBalancerSourceRanges` ne s'applique qu'au chemin LoadBalancer
+        # (klipper-lb) ; les NodePorts de kube-proxy sont un chemin distinct et
+        # non filtré.
+        #
+        # Les NodePorts ne servent à rien ici : klipper-lb DNAT directement vers
+        # la ClusterIP du Service (DEST_IPS=10.43.x.x, DEST_PORT=81), il ne passe
+        # jamais par le NodePort. On peut donc les supprimer sans rien casser.
+        allocateLoadBalancerNodePorts: false
+      # Plages autorisées à joindre 81/444 sur l'IP publique des nœuds.
+      loadBalancerSourceRanges:
+        # Le tailnet Headscale — le seul accès légitime.
+        - 100.64.0.0/10
+        # Caddy joint Traefik via localhost:81 depuis vps-a7c3e9b8. Le DNAT du
+        # hostPort pour du trafic généré localement peut présenter la source
+        # comme 127.0.0.1 ou comme une adresse du réseau pod/service selon le
+        # SNAT appliqué par le plugin portmap du CNI. Les trois plages sont donc
+        # listées — c'est le point à VÉRIFIER juste après l'apply.
+        - 127.0.0.0/8
+        - 10.42.0.0/16 # cluster-cidr (pods)
+        - 10.43.0.0/16 # service-cidr
+    # ↓ Repris tel quel du HelmChartConfig déjà en place. NE PAS RETIRER :
+    #   sans ça Traefik revient sur 80/443 et entre en collision avec Caddy.
+    ports:
+      web:
+        exposedPort: 81
+      websecure:
+        exposedPort: 444
+# ---------------------------------------------------------------------------
+# RÉSULTAT DE LA VÉRIFICATION (2026-08-06)
+#
+#   Interne via Caddy : n8n=200, argo=200, vpn=302, tinypaw.fr=200 — intact.
+#   Depuis Internet, sur les 3 VPS : 81, 444, 30594, 31767 tous FERMÉS.
+#   Le contournement `curl -H 'Host: n8n...' http://<ip-pub>:81/` ne répond plus.
+#
+# PROCÉDURE, si à rejouer
+#
+#   1. Sauvegarder l'état actuel, pour pouvoir revenir en arrière :
+#        kubectl -n kube-system get helmchartconfig traefik -o yaml > /tmp/hcc-traefik.bak.yaml
+#
+#   2. Appliquer :
+#        kubectl apply -f infra/fixes/traefik-lb-sourceranges.yaml
+#
+#   3. Attendre que le job Helm repasse et que les pods svclb redémarrent :
+#        kubectl -n kube-system rollout status ds/svclb-traefik --timeout=180s
+#        kubectl -n kube-system get pod -l svccontroller.k3s.cattle.io/svcname=traefik
+#
+#   4. Confirmer que SRC_RANGES a bien changé :
+#        kubectl -n kube-system get pod -l svccontroller.k3s.cattle.io/svcname=traefik \
+#          -o jsonpath='{range .items[*].spec.containers[*]}{.name}{" SRC_RANGES="}{.env[?(@.name=="SRC_RANGES")].value}{"\n"}{end}'
+#
+#   5. VÉRIFIER QUE RIEN N'EST CASSÉ — depuis le VPN :
+#        curl -sI https://n8n.home.dohrm.fr  | head -1     # doit répondre
+#        curl -sI https://argo.home.dohrm.fr | head -1     # doit répondre
+#
+#   6. VÉRIFIER QUE LE TROU EST FERMÉ — depuis l'IP publique :
+#        curl -s -m5 -o /dev/null -w '%{http_code}\n' -H 'Host: n8n.home.dohrm.fr' \
+#          http://51.178.19.49:81/          # doit échouer (000 / timeout)
+#        for p in 81 444 30594 31767; do
+#          nc -z -w3 164.132.187.206 $p && echo "$p ENCORE OUVERT" || echo "$p fermé"
+#        done
+#
+#   7. Si l'étape 5 échoue (Caddy ne joint plus Traefik) : soit ajouter la plage
+#      manquante vue dans les logs du pod svclb, soit basculer Caddy sur l'IP
+#      tailscale du nœud, qui est couverte par 100.64.0.0/10 :
+#        /etc/caddy/Caddyfile :  reverse_proxy localhost:81 -> reverse_proxy 100.64.0.1:81
+#        systemctl reload caddy
+#
+#   ROLLBACK :
+#        kubectl apply -f /tmp/hcc-traefik.bak.yaml
+#        kubectl -n kube-system rollout restart ds/svclb-traefik
+#
+# ---------------------------------------------------------------------------
+# ALTERNATIVE PLUS RADICALE, si tu veux zéro port ouvert par construction
+# plutôt que filtré : passer le Service Traefik en `type: ClusterIP`. Plus de
+# DaemonSet svclb, plus de hostPort, plus de NodePort — rien à filtrer.
+# Contrepartie : Caddy doit viser la ClusterIP (à épingler via
+# `service.spec.clusterIP`, sinon elle change à la recréation), et si kube-proxy
+# est en panne Caddy perd Traefik. Le filtrage par plages sources garde un
+# chemin plus classique et se règle sans toucher à Caddy.

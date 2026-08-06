@@ -183,6 +183,10 @@ step "5. Configuration k3s"
 # sans toucher à l'unit, et survit à une réinstallation de k3s.
 run mkdir -p /etc/rancher/k3s
 if [ "$CHECK_ONLY" = 0 ]; then
+  # Heredoc NON quoté (il faut l'expansion de $NODE_IP & co) : donc PAS DE
+  # BACKTICKS dans ce bloc, même en commentaire — ils seraient exécutés comme
+  # substitution de commande et disparaîtraient du fichier généré. C'est
+  # exactement ce qui est arrivé au premier jet. Utiliser des quotes simples.
   cat > /etc/rancher/k3s/config.yaml <<EOF
 # Généré par infra/new-node-bootstrap.sh — voir docs/add-k3s-node.md
 server: "$K3S_JOIN_SERVER"
@@ -200,7 +204,7 @@ tls-san:
   - "$LB_SAN"
 
 # --- Snapshots etcd vers OVH Object Storage ------------------------------
-# Les credentials viennent du Secret `etcd-s3-config` de kube-system, déployé
+# Les credentials viennent du Secret 'etcd-s3-config' de kube-system, déployé
 # par applications/cluster-baseline. Rien de sensible sur le disque du nœud.
 #
 # ⚠️ Laisser etcd-s3 à false jusqu'à ce que le bucket OVH existe ET que le
@@ -211,7 +215,7 @@ etcd-snapshot-schedule-cron: "0 */6 * * *"
 etcd-snapshot-retention: 10
 
 # Sans ça les métriques etcd ne sont servies que sur 127.0.0.1:2381 et les
-# alertes du groupe `etcd` restent muettes en permanence.
+# alertes du groupe 'etcd' restent muettes en permanence.
 etcd-expose-metrics: true
 EOF
   chmod 600 /etc/rancher/k3s/config.yaml
