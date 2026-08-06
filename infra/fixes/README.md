@@ -23,6 +23,33 @@ Services vérifiés intacts après correctifs : `n8n`=200, `argo`=200, `vpn`=302
 Une alerte `UnexpectedPubliclyExposedService` a été ajoutée pour détecter tout
 futur Service NodePort/LoadBalancer, qui rouvrirait le trou silencieusement.
 
+## Rejouer l'audit : `infra/audit-exposure.py`
+
+Le scan initial était brutal — 65535 ports × 3 nœuds × 800 connexions
+simultanées. Quelques minutes après, `vps-4541d883` a perdu **tout son trafic
+entrant** : sortant OK, `rx 0` sur tous ses pairs Tailscale, réponses DNS de
+1.1.1.1 perdues, et un reboot sans effet. Signature d'un filtrage **en amont de
+la VM** : la mitigation DDoS d'OVH prend un balayage massif pour une attaque.
+
+> La saturation de la table conntrack a été envisagée puis **écartée** :
+> `nf_conntrack_max` vaut 131072 sur ces nœuds (posé par kube-proxy d'après la
+> RAM) contre ~6000 entrées en usage courant. 65535 sondes de plus donnent ~71k,
+> sous la limite. Ce n'était pas la cause.
+
+`audit-exposure.py` remplace ce scan : un nœud à la fois, 8 connexions
+simultanées, pause entre les lots, et par défaut une liste de ~34 ports
+pertinents qui suffit à répondre à la question. Le balayage complet reste
+possible via `--all`, derrière une confirmation.
+
+```bash
+./infra/audit-exposure.py                      # recommandé
+./infra/audit-exposure.py --host vps-a7c3e9b8
+```
+
+Il connaît les ports légitimes (80, 443, 7000 sur `vps-a7c3e9b8`) et ne signale
+que le reste. Code de sortie non nul s'il trouve quelque chose — utilisable
+depuis l'audit IA périodique.
+
 ## Contexte : audit d'exposition du 2026-08-06
 
 Scan TCP complet (65535 ports, IPv4 + IPv6) depuis l'extérieur du VPN, sur les
