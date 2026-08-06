@@ -79,7 +79,27 @@ spec:
   sharding:
     enabled: false
 
-  # Utilisateur applicatif déclaratif — mot de passe lu dans un secret SOPS.
+  ############################################################################
+  # Utilisateurs applicatifs déclaratifs — mots de passe lus dans des secrets
+  # SOPS distincts.
+  #
+  # DEV ET PROD PARTAGENT CE REPLICA SET, isolés par base de données.
+  # Le cluster `mongodb-dev` a été supprimé le 2026-08-06 : aucune image Percona
+  # actuelle (testé jusqu'à 8.3.7-1) ne démarre sur un kernel >= 6.19, et le
+  # seul nœud qui avait la capacité pour dev (gmk-ai-master) est en 7.1.6.
+  #
+  # Ce que l'isolation par base garantit : `app-dev` a readWrite sur `appdb_dev`
+  # et RIEN sur `appdb`, et réciproquement. Un mauvais DSN ne peut pas écrire
+  # dans la base de l'autre environnement.
+  #
+  # Ce qu'elle ne garantit PAS, et qu'il faut avoir en tête :
+  #   - même cache WiredTiger (~800 Mo) : une requête de dev qui parcourt une
+  #     grosse collection évince le working set de prod
+  #   - même oplog, mêmes connexions, mêmes I/O disque
+  #   - les backups PBM couvrent tout le cluster, donc `appdb_dev` part aussi
+  #     chez OVH
+  # Autrement dit : dev peut dégrader prod. Pas la corrompre, mais la ralentir.
+  ############################################################################
   users:
     - name: app
       db: appdb
@@ -89,6 +109,14 @@ spec:
       roles:
         - name: readWrite
           db: appdb
+    - name: app-dev
+      db: appdb_dev
+      passwordSecretRef:
+        name: mongo-prod-app-dev-user
+        key: password
+      roles:
+        - name: readWrite
+          db: appdb_dev
 
   replsets:
     - name: rs0

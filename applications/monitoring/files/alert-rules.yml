@@ -123,34 +123,43 @@ groups:
             le seuil de quota, et local-path ne sait pas étendre un volume.
 
       ##########################################################################
-      # MongoDB REFUSE de démarrer sur les kernels 6.19 → 7.0.13.
+      # MongoDB REFUSE de démarrer sur TOUT kernel >= 6.19.
       #
-      # Le TCMalloc embarqué dans MongoDB viole l'ABI rseq de ces kernels ;
-      # mongod détecte la version et s'arrête volontairement plutôt que de
-      # crasher (MongoDB SERVER-121912). Corrigé par le KERNEL ≥ 7.0.14, pas
-      # par une version de MongoDB : monter en 8.0.x n'y change rien.
+      # Le TCMalloc embarqué viole l'ABI rseq de ces kernels ; mongod détecte la
+      # version et s'arrête plutôt que de crasher (SERVER-121912).
       #
-      # Constaté le 2026-08-06 : gmk-ai-master en 7.0.12 → mongo-dev en
-      # CrashLoopBackOff, exit 1, zéro ligne de log. Les VPS en 6.8/6.11 sont
-      # hors plage, donc la prod tourne.
+      # ⚠️ LA BORNE HAUTE N'EXISTE PAS DANS LES IMAGES ACTUELLES.
+      #   La doc MongoDB annonce une sortie par le kernel >= 7.0.14
+      #   (SERVER-125742), mais le garde-fou embarqué reste un simple « >= 6.19 ».
+      #   Vérifié le 2026-08-06 sur kernel 7.1.6 : percona-server-mongodb
+      #   8.0.26-11 ET 8.3.7-1 (la plus récente) refusent tous les deux.
+      #   Une première version de cette alerte ne visait que 6.19 → 7.0.13 :
+      #   elle aurait laissé passer un nœud monté en 7.1. D'où la borne ouverte.
       #
-      # POURQUOI CETTE ALERTE EST IMPORTANTE : les trois VPS de production sont
-      # sous 6.19 aujourd'hui. Un simple `apt upgrade` qui franchit 6.19 rendrait
-      # MongoDB indémarrable sur les trois nœuds EN MÊME TEMPS. Cette alerte
-      # transforme cette panne en avertissement.
+      # ENJEU : les trois VPS de production sont en 6.8 / 6.11, donc sous 6.19.
+      # C'est la SEULE raison pour laquelle MongoDB tourne. Un `apt upgrade` ou
+      # une montée de version d'Ubuntu qui franchit 6.19 rend MongoDB
+      # indémarrable sur les trois nœuds EN MÊME TEMPS. À noter : vps-a7c3e9b8
+      # est en Ubuntu 24.10, déjà en fin de support — le mettre à niveau
+      # amènerait un kernel >= 6.19.
+      #
+      # Sortie réelle : attendre une image Percona qui lève le garde-fou, et la
+      # tester avant de toucher au kernel d'un nœud de production.
       ##########################################################################
       - alert: NodeKernelIncompatibleWithMongoDB
         expr: |
-          node_uname_info{release=~"(6\\.(19|[2-9][0-9])|7\\.0\\.(1[0-3]|[0-9]))\\D.*"}
+          node_uname_info{release=~"(6\\.(19|[2-9][0-9])|[7-9]\\.|[1-9][0-9]+\\.).*"}
         for: 10m
         labels:
           severity: warning
         annotations:
           summary: "Kernel {{ $labels.release }} sur {{ $labels.nodename }} : MongoDB refusera de démarrer"
           description: >-
-            Plage incompatible 6.19 → 7.0.13 (SERVER-121912, TCMalloc vs rseq).
-            Ne PAS planifier de mongod sur ce nœud, et surtout ne pas laisser un
-            nœud de production franchir 6.19. Sortie : kernel >= 7.0.14.
+            Tout kernel >= 6.19 est refusé par les images Percona actuelles
+            (SERVER-121912, TCMalloc vs rseq) — sans borne haute, 7.x compris.
+            Ne pas planifier de mongod sur ce nœud. Si l'alerte apparaît sur un
+            VPS de production, MongoDB ne redémarrera plus après le prochain
+            arrêt du pod.
 
       - alert: NodeDiskWillFillIn24h
         expr: |

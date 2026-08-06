@@ -10,4 +10,5 @@ metadata:
 files:
   - mongo-users.secret.yaml
   - mongo-app-user.secret.yaml
+  - mongo-app-dev-user.secret.yaml
   - mongo-backup-s3.secret.yaml
