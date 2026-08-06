@@ -228,7 +228,32 @@ spec:
               memory: 128Mi
 
   backup:
-    enabled: true
+    ##########################################################################
+    # ⚠️ DÉSACTIVÉ TEMPORAIREMENT — À REPASSER À true DÈS QUE LE BUCKET OVH EXISTE
+    #
+    # Pourquoi : avec un bucket inexistant et des credentials factices, l'agent
+    # PBM boucle sur
+    #     check storage connection: ... get S3 object header: operation error
+    #     S3: HeadObject
+    # et l'opérateur reste bloqué à cette étape de la réconciliation. Il
+    # n'atteint donc JAMAIS la création des utilisateurs de spec.users : le
+    # cluster reste en `initializing`, `app` et `app-dev` n'existent pas, et la
+    # base est inutilisable. Constaté le 2026-08-06.
+    #
+    # Désactiver ne retire aucune protection réelle : il n'y avait aucun backup,
+    # PBM étant en échec. Ça rend l'état honnête et débloque les utilisateurs.
+    #
+    # POUR RÉACTIVER (§4.1 et §4.3 du doc) :
+    #   1. créer le bucket OVH
+    #   2. sops applications/mongodb-prod/mongo-backup-s3.secret.yaml
+    #   3. remplacer le nom de bucket CHANGEME ci-dessous
+    #   4. enabled: true
+    #   5. vérifier : kubectl -n mongodb-prod logs <pod> -c backup-agent
+    #
+    # L'alerte PSMDBNoBackupEver se déclenche tant que ce n'est pas fait — c'est
+    # voulu, elle ne doit pas être silenciée.
+    ##########################################################################
+    enabled: false
     image: percona/percona-backup-mongodb:2.15.0
     resources:
       requests:
