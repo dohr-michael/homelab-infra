@@ -122,6 +122,36 @@ groups:
             Attention : etcd passe en lecture seule sous
             le seuil de quota, et local-path ne sait pas étendre un volume.
 
+      ##########################################################################
+      # MongoDB REFUSE de démarrer sur les kernels 6.19 → 7.0.13.
+      #
+      # Le TCMalloc embarqué dans MongoDB viole l'ABI rseq de ces kernels ;
+      # mongod détecte la version et s'arrête volontairement plutôt que de
+      # crasher (MongoDB SERVER-121912). Corrigé par le KERNEL ≥ 7.0.14, pas
+      # par une version de MongoDB : monter en 8.0.x n'y change rien.
+      #
+      # Constaté le 2026-08-06 : gmk-ai-master en 7.0.12 → mongo-dev en
+      # CrashLoopBackOff, exit 1, zéro ligne de log. Les VPS en 6.8/6.11 sont
+      # hors plage, donc la prod tourne.
+      #
+      # POURQUOI CETTE ALERTE EST IMPORTANTE : les trois VPS de production sont
+      # sous 6.19 aujourd'hui. Un simple `apt upgrade` qui franchit 6.19 rendrait
+      # MongoDB indémarrable sur les trois nœuds EN MÊME TEMPS. Cette alerte
+      # transforme cette panne en avertissement.
+      ##########################################################################
+      - alert: NodeKernelIncompatibleWithMongoDB
+        expr: |
+          node_uname_info{release=~"(6\\.(19|[2-9][0-9])|7\\.0\\.(1[0-3]|[0-9]))\\D.*"}
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kernel {{ $labels.release }} sur {{ $labels.nodename }} : MongoDB refusera de démarrer"
+          description: >-
+            Plage incompatible 6.19 → 7.0.13 (SERVER-121912, TCMalloc vs rseq).
+            Ne PAS planifier de mongod sur ce nœud, et surtout ne pas laisser un
+            nœud de production franchir 6.19. Sortie : kernel >= 7.0.14.
+
       - alert: NodeDiskWillFillIn24h
         expr: |
           predict_linear(

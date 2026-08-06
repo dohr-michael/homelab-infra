@@ -26,6 +26,7 @@ Constats faits sur le cluster réel, pas sur le contenu du repo.
 | ns `tinypaw` et `ai` présents dans le cluster, absents de git | faible | à réconcilier ou assumer |
 | **Traefik joignable depuis Internet** : ServiceLB (hostPort + NodePort) contourne ufw, donc le filtre `100.64.0.0/16` de Caddy. n8n et ArgoCD étaient publics | **critique** | **corrigé le 2026-08-06** — `loadBalancerSourceRanges` + `allocateLoadBalancerNodePorts: false` (`cluster-baseline/30-traefik-lb.yaml`) |
 | **`vps-17435151` sans pare-feu** : `ufw` installé mais `inactive`, API server (6443) et kubelet (10250) sur Internet en v4 et v6 | **critique** | **corrigé le 2026-08-06** — `infra/fixes/ufw-baseline.sh` |
+| **MongoDB indémarrable sur kernel 6.19 → 7.0.13** : TCMalloc embarqué viole l'ABI rseq, mongod refuse de démarrer (SERVER-121912). `gmk-ai-master` est en 7.0.12 → `mongodb-dev` ne peut pas tourner | **bloquant (dev)** | à trancher (§8) — prod épargnée, VPS en 6.8/6.11 |
 | `gpu-worker-1060` NotReady depuis longtemps | faible | hors sujet ici |
 
 ### Cause racine du blocage ArgoCD, pour mémoire
@@ -493,7 +494,60 @@ Par ordre de valeur décroissante.
 
 ---
 
-## 8. Points de vigilance à l'exécution
+## 8. Blocage MongoDB / kernel — à trancher
+
+### Le fait
+
+MongoDB **refuse de démarrer** sur les kernels **6.19 à 7.0.13**. Le TCMalloc
+embarqué viole l'ABI rseq de ces kernels ; plutôt que de crasher en service,
+mongod détecte la version et s'arrête (MongoDB SERVER-121912). Symptôme observé :
+`CrashLoopBackOff`, exit 1, **zéro ligne de log** — le message n'apparaît qu'en
+lançant le binaire à la main :
+
+```
+MongoDB cannot start: Linux kernel versions 6.19 and newer has a known
+incompatibility with this version of MongoDB.
+```
+
+La sortie est le **kernel ≥ 7.0.14**, pas une version de MongoDB : monter en
+8.0.x n'y change rien, le correctif est en amont dans TCMalloc.
+
+| Nœud | Kernel | MongoDB |
+|---|---|---|
+| `vps-a7c3e9b8` | 6.11.0 | OK |
+| `vps-17435151` | 6.8.0 | OK |
+| `vps-4541d883` | 6.8.0 | OK |
+| `gmk-ai-master` | **7.0.12** | **refuse de démarrer** |
+
+La production tourne donc, et `mongodb-dev` est bloqué.
+
+### Le risque qui dépasse le dev
+
+Les trois VPS sont sous 6.19 **aujourd'hui**. Un `apt upgrade` qui franchit
+6.19 rendrait MongoDB indémarrable sur les trois nœuds **en même temps** — une
+panne totale déclenchée par une mise à jour de routine. L'alerte
+`NodeKernelIncompatibleWithMongoDB` transforme ça en avertissement ; sa regex
+est testée contre les 5 kernels réels du cluster et les bornes 6.19 / 7.0.13 /
+7.0.14.
+
+En attendant, tenir les kernels des VPS de production sous 6.19, ou vérifier
+qu'ils atterrissent au-delà de 7.0.14, jamais entre les deux.
+
+### Les options pour dev
+
+| Option | Pour | Contre |
+|---|---|---|
+| **Monter le kernel de `gmk-ai-master` en ≥ 7.0.14** | Deux patches d'écart (7.0.12 → 7.0.14), même série. Garde tout l'intérêt d'avoir dev sur ce nœud : 48 Go de RAM, 950 Go de disque. | Touche le nœud GPU. CLAUDE.md impose kernel ≥ 6.18.4 et firmware ≥ 20260110 pour gfx1151 — un bump de patch devrait être neutre pour ROCm, mais ça reste à valider après redémarrage. |
+| **Déplacer dev sur un VPS** | Aucun risque pour la stack IA. Kernels 6.8/6.11, hors plage. | Consomme la RAM qu'on voulait justement préserver : il faudrait baisser la limite de dev de 4 Gi à ~2 Gi sur un nœud à 8 Go qui porte déjà un membre de prod. Et plus de place pour RustFS. |
+| **Attendre une image Percona avec TCMalloc à jour** | Zéro action. | Aucune date. Dev reste bloqué. |
+
+Recommandation : la montée de kernel sur `gmk-ai-master`, parce qu'elle préserve
+la raison d'être du placement et que l'écart est minime. Mais c'est le nœud qui
+porte la stack IA, donc c'est un arbitrage à faire en connaissance de cause.
+
+---
+
+## 9. Points de vigilance à l'exécution
 
 - **RustFS est en beta** (`1.0.0-beta.12`). Aucune donnée de production ne doit y aller.
   Le S3 de prod est OVH, point.
