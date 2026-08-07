@@ -89,8 +89,13 @@ spec:
   #   3. ajouter l'entrée ci-dessous, commit
   # L'opérateur crée l'utilisateur, et MongoDB crée la base à la première
   # écriture (il n'y a rien à « créer » côté base : elle naît avec ses données).
-  # Retirer une entrée ici SUPPRIME l'utilisateur du cluster, mais laisse la
-  # base et son contenu intacts.
+  #
+  # ⚠️ RETIRER UNE ENTRÉE ICI NE SUPPRIME PAS LE COMPTE DU CLUSTER.
+  # Vérifié sur l'opérateur 1.23.0 le 2026-08-07 : il ne conserve aucune trace
+  # des comptes personnalisés qu'il a créés, donc il ne peut pas détecter une
+  # disparition. Un compte « retiré » du dépôt reste utilisable indéfiniment avec
+  # son ancien mot de passe. Le `dropUser` est à faire à la main —
+  # voir docs/critical-app-readiness.md § « Ajouter un compte / une base ».
   #
   # `db:` est la base d'AUTHENTIFICATION de l'utilisateur, et elle doit être
   # reprise dans le DSN en `authSource=` — sinon le driver cherche le compte

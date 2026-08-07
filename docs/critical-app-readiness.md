@@ -568,16 +568,91 @@ première écriture et disparaît quand elle est vide. C'est pour ça que `tempe
 `temper_dev` n'apparaissent pas encore dans `listDatabases` alors que les comptes
 existent.
 
-Les deux opérations qui suivent la même voie :
+La **rotation de mot de passe** suit la même voie : `sops` le secret, commit.
+L'opérateur applique le nouveau mot de passe sans recréer l'utilisateur ni
+toucher aux droits.
 
-- **rotation de mot de passe** : `sops` le secret, commit. L'opérateur applique
-  le nouveau mot de passe sans recréer l'utilisateur.
-- **suppression** : retirer l'entrée de `spec.users`. L'opérateur supprime le
-  compte du cluster ; la base et son contenu restent.
+#### La suppression, elle, n'est PAS déclarative — et c'est un piège
 
-Limite à connaître : les rôles utilisables sont ceux de MongoDB
+**Retirer une entrée de `spec.users` ne supprime pas le compte du cluster.**
+Vérifié sur l'opérateur 1.23.0 le 2026-08-07 lors du renommage `app` →
+`temper` : les deux nouveaux comptes ont été créés (`INFO Creating user` dans les
+logs), les deux anciens sont restés en base, avec leurs droits et leur ancien mot
+de passe. L'opérateur ne garde aucune trace des comptes personnalisés qu'il a
+créés — ni dans `.status`, ni dans `internal-mongo-prod-users` — il n'a donc
+aucun moyen de savoir qu'une entrée a disparu du CR.
+
+Conséquence de sécurité à ne pas sous-estimer : un compte « retiré » du dépôt
+continue de fonctionner indéfiniment. Un credential qu'on croit révoqué ne l'est
+pas.
+
+La suppression doit donc être faite à la main, en plus du commit :
+
+```bash
+export KUBECONFIG=~/.kube/home.dohrm
+U=$(kubectl -n mongodb-prod get secret mongo-prod-users -o jsonpath='{.data.MONGODB_USER_ADMIN_USER}' | base64 -d)
+P=$(kubectl -n mongodb-prod get secret mongo-prod-users -o jsonpath='{.data.MONGODB_USER_ADMIN_PASSWORD}' | base64 -d)
+kubectl -n mongodb-prod exec mongo-prod-rs0-0 -c mongod -- \
+  mongosh "mongodb://$U:$P@localhost:27017/admin?replicaSet=rs0" --quiet --eval '
+    db.getSiblingDB("<base>").dropUser("<compte>")'
+```
+
+Et pour auditer l'écart entre le dépôt et le cluster (à faire après toute
+suppression) :
+
+```bash
+... --eval 'db.getSiblingDB("admin").system.users.find({db:{$nin:["admin"]}},
+             {user:1,db:1}).toArray().forEach(u => print(u.db+" : "+u.user))'
+```
+
+Tout ce qui sort de là et n'est pas dans `spec.users` est un compte orphelin.
+
+Limite à connaître par ailleurs : les rôles utilisables sont ceux de MongoDB
 (`readWrite`, `read`, `dbAdmin`…). Pour un droit plus fin, il faut passer par
 `spec.roles` (privilèges par collection/action), également déclaratif.
+
+### Se connecter : le DSN fourni par l'opérateur, et son piège TLS
+
+Pour chaque entrée de `spec.users`, l'opérateur génère un Secret
+`<secret>-conn-str` contenant un DSN **complet, mot de passe inclus**. C'est ce
+qu'il faut monter dans l'application plutôt que de recomposer le DSN à la main :
+
+```bash
+kubectl -n mongodb-prod get secret mongo-prod-temper-user-conn-str \
+  -o jsonpath='{.data.temper_rs0_connectionString}' | base64 -d
+```
+
+Deux clés par secret : `..._connectionString` (les 3 membres énumérés) et
+`..._connectionStringSrv` (`mongodb+srv://`, qui résout les membres par SRV).
+
+**Le DSN généré porte `&tls=true`, et tel quel il ne fonctionne pas.** Vérifié le
+2026-08-07 : la connexion tombe en `MongoNetworkError: self-signed certificate in
+certificate chain`, puis, CA fournie, en `connection closed`. La raison est dans
+la ligne de commande de mongod :
+
+```
+--tlsMode preferTLS --tlsCAFile /etc/mongodb-ssl/ca.crt
+```
+
+Une `tlsCAFile` sans `--tlsAllowConnectionsWithoutCertificates` signifie que
+**toute connexion TLS doit présenter un certificat client** signé par cette CA.
+Autrement dit, `tls=true` ici veut dire TLS *mutuel*, pas TLS simple. Confirmé
+par l'essai réussi avec `tlsCAFile` **et** `tlsCertificateKeyFile`.
+
+Deux options pour l'application, à choisir sciemment :
+
+1. **Retirer `&tls=true` du DSN** (ce qui a été validé pour `temper` et
+   `temper-dev`). `preferTLS` accepte les connexions en clair. Le trafic
+   inter-nœuds passe déjà dans le tunnel WireGuard de Headscale, donc rien ne
+   circule en clair sur Internet — mais le trafic pod → mongod dans un même nœud,
+   lui, l'est.
+2. **Monter le Secret `mongo-prod-ssl`** (`ca.crt`, `tls.crt`, `tls.key`) dans le
+   pod applicatif et garder `tls=true`, en ajoutant `tlsCAFile` et
+   `tlsCertificateKeyFile` (un seul fichier concaténant clé + certificat).
+
+L'option 1 est celle en place aujourd'hui. Le passage à `requireTLS` (voir §7)
+rendra l'option 2 obligatoire : c'est le vrai coût de ce changement, et c'est la
+distribution du matériel cryptographique aux clients, pas le flag lui-même.
 
 Dev peut donc **dégrader** prod — pas la corrompre, mais la ralentir. À garder en
 tête si une charge de dev devient lourde ; le jour où ça gêne, la sortie est un
