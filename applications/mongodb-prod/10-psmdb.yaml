@@ -83,40 +83,57 @@ spec:
   # Utilisateurs applicatifs déclaratifs — mots de passe lus dans des secrets
   # SOPS distincts.
   #
+  # AJOUTER UN COMPTE / UNE BASE = ajouter une entrée ici + un secret SOPS.
+  #   1. créer `mongo-<nom>-user.secret.yaml` (stringData.password), le chiffrer
+  #   2. l'ajouter à ksops-generator.yaml
+  #   3. ajouter l'entrée ci-dessous, commit
+  # L'opérateur crée l'utilisateur, et MongoDB crée la base à la première
+  # écriture (il n'y a rien à « créer » côté base : elle naît avec ses données).
+  # Retirer une entrée ici SUPPRIME l'utilisateur du cluster, mais laisse la
+  # base et son contenu intacts.
+  #
+  # `db:` est la base d'AUTHENTIFICATION de l'utilisateur, et elle doit être
+  # reprise dans le DSN en `authSource=` — sinon le driver cherche le compte
+  # dans `admin` et l'authentification échoue.
+  #
   # DEV ET PROD PARTAGENT CE REPLICA SET, isolés par base de données.
   # Le cluster `mongodb-dev` a été supprimé le 2026-08-06 : aucune image Percona
   # actuelle (testé jusqu'à 8.3.7-1) ne démarre sur un kernel >= 6.19, et le
   # seul nœud qui avait la capacité pour dev (gmk-ai-master) est en 7.1.6.
   #
-  # Ce que l'isolation par base garantit : `app-dev` a readWrite sur `appdb_dev`
-  # et RIEN sur `appdb`, et réciproquement. Un mauvais DSN ne peut pas écrire
-  # dans la base de l'autre environnement.
+  # Ce que l'isolation par base garantit : `temper-dev` a readWrite sur
+  # `temper_dev` et RIEN sur `temper`, et réciproquement. Un mauvais DSN ne peut
+  # pas écrire dans la base de l'autre environnement.
   #
   # Ce qu'elle ne garantit PAS, et qu'il faut avoir en tête :
   #   - même cache WiredTiger (~800 Mo) : une requête de dev qui parcourt une
   #     grosse collection évince le working set de prod
   #   - même oplog, mêmes connexions, mêmes I/O disque
-  #   - les backups PBM couvrent tout le cluster, donc `appdb_dev` part aussi
+  #   - les backups PBM couvrent tout le cluster, donc `temper_dev` part aussi
   #     chez OVH
   # Autrement dit : dev peut dégrader prod. Pas la corrompre, mais la ralentir.
   ############################################################################
   users:
-    - name: app
-      db: appdb
+    - name: temper
+      db: temper
       passwordSecretRef:
-        name: mongo-prod-app-user
+        name: mongo-prod-temper-user
         key: password
       roles:
         - name: readWrite
-          db: appdb
-    - name: app-dev
-      db: appdb_dev
+          db: temper
+    # Base nommée avec un underscore et non `temper-dev` : un nom de base à
+    # tiret est légal en MongoDB, mais casse la notation `db.temper-dev` dans
+    # mongosh (interprétée comme une soustraction) et impose partout
+    # `getSiblingDB("temper-dev")`. Le compte, lui, garde le tiret.
+    - name: temper-dev
+      db: temper_dev
       passwordSecretRef:
-        name: mongo-prod-app-dev-user
+        name: mongo-prod-temper-dev-user
         key: password
       roles:
         - name: readWrite
-          db: appdb_dev
+          db: temper_dev
 
   replsets:
     - name: rs0
@@ -237,7 +254,7 @@ spec:
     #     S3: HeadObject
     # et l'opérateur reste bloqué à cette étape de la réconciliation. Il
     # n'atteint donc JAMAIS la création des utilisateurs de spec.users : le
-    # cluster reste en `initializing`, `app` et `app-dev` n'existent pas, et la
+    # cluster reste en `initializing`, aucun compte applicatif n'existe, et la
     # base est inutilisable. Constaté le 2026-08-06.
     #
     # Désactiver ne retire aucune protection réelle : il n'y avait aucun backup,

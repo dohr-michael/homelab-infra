@@ -68,7 +68,7 @@ MongoDB PROD  RS ───┼─ vps-17435151  100.64.0.3   mongo-prod-rs0-1   (
                        3 régions OVH → quorum 2/3, survit à la perte d'1 nœud
 
 etcd          ── les 3 mêmes VPS (control-plane + etcd)
-MongoDB DEV   ── supprimé : dev = base appdb_dev sur le RS de prod (§8)
+MongoDB DEV   ── supprimé : dev = base temper_dev sur le RS de prod (§8)
 RustFS (S3 dev)                     ─ gmk-ai-master
 Monitoring (VM+Grafana)             ─ gmk-ai-master
 
@@ -533,18 +533,51 @@ Dev vit donc sur le **replica set de production**, isolé par base de données :
 
 | Utilisateur | Base | Droits | Secret |
 |---|---|---|---|
-| `app` | `appdb` | readWrite sur `appdb` | `mongo-app-user.secret.yaml` |
-| `app-dev` | `appdb_dev` | readWrite sur `appdb_dev` | `mongo-app-dev-user.secret.yaml` |
+| `temper` | `temper` | readWrite sur `temper` | `mongo-temper-user.secret.yaml` |
+| `temper-dev` | `temper_dev` | readWrite sur `temper_dev` | `mongo-temper-dev-user.secret.yaml` |
 
-Ce que ça garantit : `app-dev` ne peut ni lire ni écrire dans `appdb`. Un mauvais
-DSN ne peut pas polluer l'autre environnement.
+La base de dev est `temper_dev` et non `temper-dev` : un tiret est légal dans un
+nom de base MongoDB, mais casse `db.temper-dev` dans mongosh (lu comme une
+soustraction) et impose `getSiblingDB("temper-dev")` partout. Le compte, lui,
+garde le tiret.
+
+Ce que ça garantit : `temper-dev` ne peut ni lire ni écrire dans `temper`. Un
+mauvais DSN ne peut pas polluer l'autre environnement.
 
 Ce que ça ne garantit pas, et qu'il faut assumer :
 
 - **même cache WiredTiger** (~800 Mo) : une requête de dev qui parcourt une
   grosse collection évince le working set de prod
 - même oplog, mêmes connexions, mêmes I/O disque
-- les backups PBM couvrent tout le cluster, donc `appdb_dev` part aussi chez OVH
+- les backups PBM couvrent tout le cluster, donc `temper_dev` part aussi chez OVH
+
+### Ajouter un compte / une base
+
+L'opérateur gère les utilisateurs de façon déclarative (`spec.users`), donc tout
+passe par un commit — jamais par un `db.createUser()` à la main, qui serait
+écrasé ou divergerait du dépôt :
+
+1. créer `applications/mongodb-prod/mongo-<nom>-user.secret.yaml`
+   (`stringData.password`), puis `sops --encrypt --in-place`
+2. l'ajouter à `ksops-generator.yaml`
+3. ajouter l'entrée dans `spec.users` du CR (`name`, `db`, `passwordSecretRef`,
+   `roles`), commit
+
+Il n'y a **rien à créer côté base de données** : une base MongoDB naît à la
+première écriture et disparaît quand elle est vide. C'est pour ça que `temper` et
+`temper_dev` n'apparaissent pas encore dans `listDatabases` alors que les comptes
+existent.
+
+Les deux opérations qui suivent la même voie :
+
+- **rotation de mot de passe** : `sops` le secret, commit. L'opérateur applique
+  le nouveau mot de passe sans recréer l'utilisateur.
+- **suppression** : retirer l'entrée de `spec.users`. L'opérateur supprime le
+  compte du cluster ; la base et son contenu restent.
+
+Limite à connaître : les rôles utilisables sont ceux de MongoDB
+(`readWrite`, `read`, `dbAdmin`…). Pour un droit plus fin, il faut passer par
+`spec.roles` (privilèges par collection/action), également déclaratif.
 
 Dev peut donc **dégrader** prod — pas la corrompre, mais la ralentir. À garder en
 tête si une charge de dev devient lourde ; le jour où ça gêne, la sortie est un
