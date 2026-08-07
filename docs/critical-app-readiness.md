@@ -147,7 +147,7 @@ simultanée de plusieurs VPS OVH — pas à une erreur applicative.
 | Dev sur le nœud maison | seul nœud avec RAM et disque | dev indisponible quand la maison est down |
 | Monitoring sur le nœud maison | idem | **le monitoring meurt avec la maison** → canaux d'alerte hors cluster obligatoires, et un dead-man's switch reste à brancher (§7) |
 | `tls.mode: preferTLS` | pas de cert-manager ; le trafic inter-nœuds est déjà dans le tunnel WireGuard de Headscale | un client peut se connecter en clair ; certificats auto-générés à renouveler à la main |
-| `cacheSizeRatio: 0.4` sur 2 Gi de limite | le défaut MongoDB (50 % de RAM−1 Go ≈ 3,5 Go sur ces nœuds) ferait tomber le nœud entier | ~800 Mo de cache WiredTiger : suffisant pour un dataset modeste, à revoir si le working set grossit |
+| `cacheSizeRatio: 0.4` sur 2 Gi de limite | le défaut MongoDB (50 % de RAM−1 Go ≈ 3,5 Go sur ces nœuds) ferait tomber le nœud entier | **409 MiB** de cache WiredTiger — le ratio s'applique à `limite − 1 Gi`, pas à la limite (voir plus bas) : suffisant pour un dataset modeste, à revoir sous sonde |
 | Toleration de `CriticalAddonsOnly` plutôt que retrait du taint | garde `vps-17435151` fermé aux charges non critiques | il faut penser à la toleration pour toute future charge qui doit s'étaler |
 
 ---
@@ -199,10 +199,30 @@ courent dans tout ce document :
 - le monitoring **restera durablement sur le nœud maison** — ce n'est plus une étape
   transitoire mais un état permanent, ce qui rend le dead-man's switch externe
   obligatoire et non plus optionnel (§7) ;
-- le cache WiredTiger reste à ~800 Mo par membre (`cacheSizeRatio: 0.4` sur 2 Gi). Si le
-  working set de l'application dépasse ça, les lectures partiront sur disque. C'est la
-  première métrique à regarder en charge :
-  `mongodb_ss_wt_cache_bytes_currently_in_the_cache` face à la taille du dataset.
+- le cache WiredTiger est à **409 MiB par membre**, pas ~800 Mo comme annoncé
+  initialement. La formule de l'opérateur est `(limite mémoire − 1 Gi) × cacheSizeRatio`,
+  donc `(2 Gi − 1 Gi) × 0,4 = 409 MiB`. Mesuré le 2026-08-07, identique sur les trois
+  membres :
+
+  ```bash
+  CU=$(kubectl -n mongodb-prod get secret mongo-prod-users -o jsonpath='{.data.MONGODB_CLUSTER_ADMIN_USER}' | base64 -d)
+  P=$(kubectl -n mongodb-prod get secret mongo-prod-users -o jsonpath='{.data.MONGODB_CLUSTER_ADMIN_PASSWORD}' | base64 -d)
+  kubectl -n mongodb-prod exec mongo-prod-rs0-0 -c mongod -- \
+    mongosh "mongodb://$CU:$P@localhost:27017/admin" --quiet --eval \
+    'print(db.serverStatus().wiredTiger.cache["maximum bytes configured"])'   # 428867584
+  ```
+
+  Le `− 1 Gi` correspond à ce que mongod consomme hors cache (connexions, tris,
+  agrégations) : la répartition réelle des 2 Gi est ~409 MiB de cache et ~1,6 Gi de
+  marge, ce qui est volontairement conservateur.
+
+  **Décision du 2026-08-07 : on ne touche à rien pour l'instant.** La valeur sera
+  ajustée sous sonde de performance une fois l'application déployée, pas à l'estime.
+  Marge disponible le jour où c'est nécessaire : `0.7` donnerait ~716 MiB en laissant
+  encore ~1,3 Gi. La métrique à regarder en charge est
+  `mongodb_ss_wt_cache_bytes_currently_in_the_cache` face à la taille du dataset, et
+  surtout le taux d'éviction — un cache saturé se voit d'abord aux lectures qui
+  repartent sur disque.
 
 **Object Storage.** Trois buckets, S3-compatible :
 
@@ -546,8 +566,8 @@ mauvais DSN ne peut pas polluer l'autre environnement.
 
 Ce que ça ne garantit pas, et qu'il faut assumer :
 
-- **même cache WiredTiger** (~800 Mo) : une requête de dev qui parcourt une
-  grosse collection évince le working set de prod
+- **même cache WiredTiger** (409 MiB, voir §3) : une requête de dev qui parcourt
+  une grosse collection évince le working set de prod
 - même oplog, mêmes connexions, mêmes I/O disque
 - les backups PBM couvrent tout le cluster, donc `temper_dev` part aussi chez OVH
 

@@ -111,8 +111,9 @@ spec:
   # pas écrire dans la base de l'autre environnement.
   #
   # Ce qu'elle ne garantit PAS, et qu'il faut avoir en tête :
-  #   - même cache WiredTiger (~800 Mo) : une requête de dev qui parcourt une
-  #     grosse collection évince le working set de prod
+  #   - même cache WiredTiger (409 MiB, voir cacheSizeRatio plus bas) : une
+  #     requête de dev qui parcourt une grosse collection évince le working set
+  #     de prod
   #   - même oplog, mêmes connexions, mêmes I/O disque
   #   - les backups PBM couvrent tout le cluster, donc `temper_dev` part aussi
   #     chez OVH
@@ -189,9 +190,26 @@ spec:
         engine: wiredTiger
         wiredTiger:
           engineConfig:
-            # Le cache est calculé en ratio de la limite mémoire du conteneur.
-            # 0.4 × 2 Gi ≈ 800 Mi. Le défaut MongoDB (50 % de RAM-1G, soit
-            # ~3,5 Gi sur ces nœuds à 8 Go) ferait OOM le nœud entier.
+            # ATTENTION À LA FORMULE : le ratio ne s'applique PAS à la limite
+            # mémoire, mais à `limite - 1 Gi` (le 1 Gi représente ce que mongod
+            # consomme hors cache : connexions, tris, agrégations).
+            #
+            #     (2 Gi - 1 Gi) × 0.4 = 0.4 GiB = 409 MiB
+            #
+            # Mesuré le 2026-08-07, identique sur les 3 membres : mongod tourne
+            # avec `wiredTigerCacheSizeGB=0.40` et `serverStatus().wiredTiger
+            # .cache["maximum bytes configured"]` vaut 428867584 (409 MiB).
+            # Les commentaires précédents annonçaient ~800 Mi : c'était faux
+            # d'un facteur 2.
+            #
+            # Répartition réelle des 2 Gi : ~409 MiB de cache, ~1,6 Gi de marge.
+            # C'est volontairement conservateur. Le défaut MongoDB (50 % de
+            # RAM-1G, soit ~3,5 Gi sur ces nœuds à 8 Go) ferait OOM le nœud.
+            #
+            # NON AJUSTÉ POUR L'INSTANT (décision du 2026-08-07) : la valeur
+            # sera revue avec une sonde de performance une fois l'application
+            # déployée, plutôt qu'au doigt mouillé. Marge disponible si besoin :
+            # 0.7 donnerait ~716 MiB en laissant encore ~1,3 Gi.
             cacheSizeRatio: 0.4
             journalCompressor: snappy
           collectionConfig:
