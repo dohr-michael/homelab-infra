@@ -36,7 +36,12 @@ spec:
             - --policy=upsert-only
             - --txt-owner-id=homelab
             - --txt-prefix=_extdns.
-            - --interval=1m
+            # 1 min interrogeait l'API OVH 1440 fois par jour pour 71
+            # enregistrements qui ne bougent quasiment jamais. Le conteneur
+            # avait 33 redémarrages en exit 1 au 2026-08-07 (pas un OOM :
+            # 21 Mi utilisés pour 64 Mi de limite), donc des erreurs côté API.
+            # Réduire la fréquence réduit la surface d'échec autant que le bruit.
+            - --interval=10m
             - --log-level=info
           env:
             - name: OVH_APPLICATION_KEY
