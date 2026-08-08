@@ -386,7 +386,7 @@ avant de converger — bruyant, pas cassant.
 
 ---
 
-### 4.6 Exposer les métriques etcd sur les deux anciens nœuds
+### 4.6 Exposer les métriques etcd sur les deux anciens nœuds — ✅ fait le 2026-08-08
 
 `vps-4541d883` a `etcd-expose-metrics: true` (posé par `new-node-bootstrap.sh`) et sert
 bien ses 646 séries `etcd_*` sur `100.64.0.11:2381`. Les deux anciens nœuds, non : k3s
@@ -443,6 +443,37 @@ for ip in 100.64.0.1 100.64.0.3 100.64.0.11; do
   curl -s -m4 "http://$ip:2381/metrics" | grep -c "^etcd_" || echo INJOIGNABLE
 done
 ```
+
+#### ✅ Exécuté le 2026-08-08
+
+Les trois nœuds portent désormais un `/etc/rancher/k3s/config.yaml` avec
+`etcd-expose-metrics: true` et `etcd-s3: true`. Redémarrage roulant, un nœud à la
+fois, en attendant `Ready` entre chaque — le quorum n'est jamais descendu sous 3.
+
+| Membre | Avant | Après |
+|---|---|---|
+| `100.64.0.1` (a7c3e9b8) | INJOIGNABLE | **607 séries** |
+| `100.64.0.3` (17435151) | INJOIGNABLE | **633 séries** |
+| `100.64.0.11` (4541d883) | 646 séries | 609 séries |
+
+L'angle mort de deux membres sur trois est refermé : `EtcdMembersNotScraped` ne
+devrait plus se déclencher.
+
+Snapshots vers S3 validés depuis les trois nœuds (~16–18 Mo chacun, bucket
+`eatable-wigner-mdohr`, préfixe `k3s-home/`). Cron toutes les 6 h, rétention
+locale 10, rétention S3 30.
+
+Deux détails relevés à l'exécution :
+
+- `k3s etcd-snapshot save` émet des avertissements `Unknown flag
+  --etcd-expose-metrics / --etcd-snapshot-schedule-cron found in config.yaml`.
+  C'est bénin : la sous-commande ne connaît pas ces clés, qui ne concernent que
+  `k3s server`. Le snapshot est bien pris et uploadé.
+- Les trois snapshots de validation portent des noms manuels (`valid-*`,
+  `validation-*`). La rétention k3s ne reconnaît que le motif
+  `etcd-snapshot-<nœud>-<epoch>` : **ces trois-là ne seront jamais élagués
+  automatiquement**, à supprimer à la main une fois le premier snapshot cron
+  arrivé.
 
 ---
 
