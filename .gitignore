@@ -3,6 +3,5 @@ age-key.txt
 *.age-key
 keys.txt
 
-# Credentials locaux frp (non chiffrés)
-applications/frp/clients/.env
+# Credentials locaux non chiffrés
 applications/cluster-baseline/.env
