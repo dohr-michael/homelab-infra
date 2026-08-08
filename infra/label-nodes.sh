@@ -37,6 +37,15 @@ DEV_NODES=(gmk-ai-master)
 RUSTFS_NODES=(gmk-ai-master)
 MONITORING_NODES=(gmk-ai-master)
 
+# --- Plan de contrôle applicatif : ArgoCD ---------------------------------
+# Posé le 2026-08-08 sur vps-4541d883, le nœud le moins chargé (14 % de
+# requests, 66 Go libres). ArgoCD vivait jusque-là sur vps-a7c3e9b8, qui porte
+# déjà Headscale, Caddy et un membre du replica set : ~974 Mo de RSS pour huit
+# pods, sur le nœud le plus sollicité et celui qui concentre toutes les entrées
+# réseau. Séparer le pilotage GitOps de l'ingress réduit aussi le rayon
+# d'explosion — reconstruire vps-a7c3e9b8 n'emportera plus ArgoCD avec lui.
+PLATFORM_NODES=(vps-4541d883)
+
 label() {
   local key=$1; shift
   for node in "$@"; do
@@ -53,8 +62,10 @@ echo "role.homelab/rustfs :"
 label role.homelab/rustfs "${RUSTFS_NODES[@]}"
 echo "role.homelab/monitoring :"
 label role.homelab/monitoring "${MONITORING_NODES[@]}"
+echo "role.homelab/platform :"
+label role.homelab/platform "${PLATFORM_NODES[@]}"
 
 echo
 echo "Labels role.homelab/* posés :"
 kubectl get nodes \
-  -L role.homelab/mongodb-prod,role.homelab/mongodb-dev,role.homelab/rustfs,role.homelab/monitoring
+  -L role.homelab/mongodb-prod,role.homelab/mongodb-dev,role.homelab/rustfs,role.homelab/monitoring,role.homelab/platform

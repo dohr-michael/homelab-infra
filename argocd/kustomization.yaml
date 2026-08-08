@@ -32,3 +32,142 @@ patches:
       kind: Deployment
       name: argocd-repo-server
     path: patches/repo-server-sops-sidecar.yaml
+
+  ##########################################################################
+  # Placement sur le nœud « plateforme » + priorityClass — voir le fichier
+  # patches/placement.yaml pour le raisonnement.
+  ##########################################################################
+  - target:
+      kind: Deployment
+    path: patches/placement.yaml
+  - target:
+      kind: StatefulSet
+    path: patches/placement.yaml
+
+  ##########################################################################
+  # COMPOSANTS RETIRÉS — vérifiés inutilisés le 2026-08-08.
+  #
+  #   argocd-dex-server (~95 Mo)   : aucune clé dex / oidc / sso dans
+  #                                  argocd-cm, donc aucun SSO configuré.
+  #   argocd-notifications (~98 Mo): zéro Application abonnée, les alertes
+  #                                  passent par Alertmanager.
+  #
+  # Seuls les Deployment sont supprimés. Les ServiceAccount, Service et RBAC
+  # associés restent : ils ne consomment rien et les remettre en service ne
+  # demandera que de retirer ces deux blocs.
+  ##########################################################################
+  - target:
+      kind: Deployment
+      name: argocd-dex-server
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: argocd-dex-server
+      $patch: delete
+  - target:
+      kind: Deployment
+      name: argocd-notifications-controller
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: argocd-notifications-controller
+      $patch: delete
+
+  ##########################################################################
+  # REQUESTS / LIMITS — les huit pods étaient en BestEffort.
+  #
+  # Valeurs calées sur l'usage mesuré le 2026-08-07 (`kubectl top` et RSS),
+  # avec une marge d'environ 2×.
+  #
+  # PAS DE LIMITE CPU, volontairement : ArgoCD est un jeu de contrôleurs, et
+  # une limite CPU provoque du throttling CFS qui se traduit directement en
+  # latence de réconciliation. Les requests suffisent à ce que le scheduler
+  # les voie — c'était le vrai problème. Les limites mémoire, elles, sont là
+  # pour borner une fuite éventuelle.
+  ##########################################################################
+  - target:
+      kind: StatefulSet
+      name: argocd-application-controller
+    patch: |
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: argocd-application-controller
+      spec:
+        template:
+          spec:
+            containers:
+              - name: argocd-application-controller
+                resources:
+                  requests: { cpu: 100m, memory: 320Mi }
+                  limits: { memory: 768Mi }
+  - target:
+      kind: Deployment
+      name: argocd-repo-server
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: argocd-repo-server
+      spec:
+        template:
+          spec:
+            containers:
+              - name: argocd-repo-server
+                resources:
+                  requests: { cpu: 50m, memory: 200Mi }
+                  limits: { memory: 512Mi }
+              - name: cmp-sops
+                resources:
+                  requests: { cpu: 25m, memory: 64Mi }
+                  limits: { memory: 256Mi }
+  - target:
+      kind: Deployment
+      name: argocd-server
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: argocd-server
+      spec:
+        template:
+          spec:
+            containers:
+              - name: argocd-server
+                resources:
+                  requests: { cpu: 50m, memory: 128Mi }
+                  limits: { memory: 384Mi }
+  - target:
+      kind: Deployment
+      name: argocd-applicationset-controller
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: argocd-applicationset-controller
+      spec:
+        template:
+          spec:
+            containers:
+              - name: argocd-applicationset-controller
+                resources:
+                  requests: { cpu: 50m, memory: 128Mi }
+                  limits: { memory: 384Mi }
+  - target:
+      kind: Deployment
+      name: argocd-redis
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: argocd-redis
+      spec:
+        template:
+          spec:
+            containers:
+              - name: redis
+                resources:
+                  requests: { cpu: 25m, memory: 64Mi }
+                  limits: { memory: 128Mi }

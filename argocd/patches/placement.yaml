@@ -1,0 +1,29 @@
+##############################################################################
+# Placement de tous les composants ArgoCD sur le nœud « plateforme ».
+#
+# Appliqué par sélecteur de type dans kustomization.yaml, donc à tous les
+# Deployment et au StatefulSet du build ArgoCD d'un coup — pas besoin de lister
+# les composants, et un nouveau composant dans une version future sera couvert
+# automatiquement.
+#
+# `metadata.name` est ici un simple placeholder : avec un `target:` explicite,
+# kustomize ignore le nom du patch pour la sélection.
+#
+# Le nœud est choisi par LABEL et non par hostname : déplacer ArgoCD =
+# déplacer `role.homelab/platform` avec infra/label-nodes.sh, sans recommit.
+#
+# priorityClassName : les huit pods étaient en QoS BestEffort — zéro request,
+# zéro limit — donc invisibles du scheduler ET premiers évincés sous pression
+# mémoire. Sur le nœud qui porte le GitOps, c'est le pire ordre d'éviction
+# possible : ArgoCD meurt en premier et ne peut plus rien réparer.
+##############################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: placeholder
+spec:
+  template:
+    spec:
+      nodeSelector:
+        role.homelab/platform: "true"
+      priorityClassName: homelab-platform
