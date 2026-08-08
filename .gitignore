@@ -5,3 +5,4 @@ keys.txt
 
 # Credentials locaux frp (non chiffrés)
 applications/frp/clients/.env
+applications/cluster-baseline/.env

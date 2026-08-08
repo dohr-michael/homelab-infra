@@ -244,9 +244,11 @@ tls-san:
 # Les credentials viennent du Secret 'etcd-s3-config' de kube-system, déployé
 # par applications/cluster-baseline. Rien de sensible sur le disque du nœud.
 #
-# ⚠️ Laisser etcd-s3 à false jusqu'à ce que le bucket OVH existe ET que le
-#    Secret soit déployé : sinon chaque snapshot échoue et pollue les logs.
-etcd-s3: false
+# Bucket OVH créé et Secret déployé le 2026-08-08, donc activé par défaut pour
+# tout nouveau nœud. Si vous bootstrappez sur un cluster où le Secret
+# 'etcd-s3-config' n'existe pas encore, repassez à false : sinon chaque
+# snapshot échoue et pollue les logs.
+etcd-s3: true
 etcd-s3-config-secret: etcd-s3-config
 etcd-snapshot-schedule-cron: "0 */6 * * *"
 etcd-snapshot-retention: 10

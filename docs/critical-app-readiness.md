@@ -224,26 +224,42 @@ courent dans tout ce document :
   surtout le taux d'éviction — un cache saturé se voit d'abord aux lectures qui
   repartent sur disque.
 
-**Object Storage.** Trois buckets, S3-compatible :
+**Object Storage — ✅ créé le 2026-08-08.** Les noms sont ceux générés par OVH, pas
+des `homelab-*` : ne cherchez pas de bucket portant un nom parlant.
 
-| Bucket | Classe | Région conseillée | Usage |
+| Bucket | Région | Versioning | Usage |
 |---|---|---|---|
-| `homelab-etcd-snapshots` | Standard | `eu-west-par` (3-AZ) | snapshots etcd |
-| `homelab-mongodb-backups` | Standard + **versioning** | `eu-west-par` (3-AZ) | backups PBM de prod |
-| `homelab-uploads` | High Performance | même région que les nœuds (`gra`/`sbg`/`rbx`) | uploads applicatifs |
+| `eatable-wigner-mdohr` | `eu-west-par` (3-AZ) | non | snapshots etcd |
+| `wrathful-millikan-mdohr` | `eu-west-par` (3-AZ) | **oui** | backups PBM de prod |
+| `familiar-natarajan-mdohr` | `eu-west-par` | non | uploads applicatifs (aucun consommateur à ce jour) |
 
-`eu-west-par` est une région 3-AZ : c'est le meilleur choix pour des backups, dont on
-veut avant tout la durabilité. High Performance n'y est pas disponible, mais un backup
-n'a pas besoin de latence — un upload applicatif, si. D'où la séparation.
+`eu-west-par` est une région 3-AZ : c'est le bon choix pour des sauvegardes, dont on
+veut avant tout la durabilité. Un premier bucket de snapshots avait été créé en `rbx`
+(mono-AZ) puis abandonné — la région d'un bucket ne se change pas, il faut en recréer un.
 
-Créer **un utilisateur S3 par usage**, pas un seul pour les trois : les credentials de
-backup ne doivent pas pouvoir toucher au bucket d'upload, et inversement.
+**Deux utilisateurs S3, pas trois** : un pour backup + snapshots, un pour upload. Le
+cloisonnement qui compte est vérifié — l'utilisateur « upload » reçoit **403** sur le
+bucket de backup. Contrepartie assumée : la copie hors cluster des credentials etcd
+exigée par la restauration (§4.4) donne aussi accès aux backups MongoDB.
 
-Endpoint : `https://s3.<region>.io.cloud.ovh.net`.
+Endpoint : `https://s3.<region>.io.cloud.ovh.net`. **Attention, deux formats
+coexistent** : PBM veut l'URL avec schéma et sans slash final, k3s
+(`etcd-s3-endpoint`) veut le hostname nu. Ne pas recopier l'un sur l'autre.
 
-Ajouter une lifecycle rule sur `homelab-mongodb-backups` (transition vers Infrequent
-Access après 30 j, expiration après 180 j) — PBM gère sa propre rétention par nombre,
-la lifecycle est le filet de sécurité contre les orphelins.
+**Lifecycle rule à créer sur `wrathful-millikan-mdohr` — pas encore faite.** Le
+versioning rend `retention.deleteFromStorage: true` de PBM purement cosmétique :
+mesuré le 2026-08-08, un PUT suivi d'un DELETE laisse 1 Version + 1 DeleteMarker, et
+rien n'est libéré. La règle doit donc porter, en plus de la transition Infrequent
+Access à 30 j et de l'expiration à 180 j :
+
+- `NoncurrentVersionExpiration` — 30 jours
+- `ExpiredObjectDeleteMarker: true`
+
+Sans ces deux clauses, le bucket grossit indéfiniment malgré la rétention PBM.
+
+**Avant toute rotation de credentials ou changement de bucket**, refaire la validation
+HEAD/PUT/GET/DELETE : c'est ce qui garantit qu'on ne rejoue pas la panne du 2026-08-06
+(bucket injoignable → PBM boucle → l'opérateur n'atteint jamais la création des comptes).
 
 ### 4.2 Labels de nœuds — ✅ fait le 2026-08-06
 
@@ -271,7 +287,25 @@ sops applications/cluster-baseline/etcd-s3.secret.yaml
 
 # Token du bot Telegram, chat_id, webhook Discord
 sops applications/monitoring/alertmanager.secret.yaml
+
+# DSN MongoDB + credentials S3 de l'application temper — ✅ renseignés le 2026-08-08
+sops applications/temper-dev/10-infra-secrets.secret.yaml
+sops applications/temper-prod/10-infra-secrets.secret.yaml
 ```
+
+Le bucket d'upload `familiar-natarajan-mdohr` est **partagé entre dev et prod**,
+avec un utilisateur S3 distinct par environnement (`UPLOAD_S3_*` et
+`UPLOAD_DEV_S3_*` dans `.env`). Le cloisonnement est donc au niveau des
+credentials, **pas du bucket** : prévoir un préfixe par environnement côté
+application, sinon dev peut écraser des objets de prod.
+
+Cloisonnement vérifié le 2026-08-08 — chacun des deux utilisateurs « upload »
+reçoit **403** sur le bucket de backup.
+
+⚠️ `MONGO_URI_SECRET` est une **copie** du DSN généré par l'opérateur
+(`mongo-prod-temper*-user-conn-str`), amputée de `&tls=true` — voir §« piège
+TLS ». Un Secret ne traversant pas les namespaces, une rotation du mot de passe
+MongoDB doit être reportée à la main dans les deux fichiers ci-dessus.
 
 Puis le nom du bucket, en clair dans le CR (ce n'est pas un secret) :
 

@@ -269,31 +269,35 @@ spec:
 
   backup:
     ##########################################################################
-    # ⚠️ DÉSACTIVÉ TEMPORAIREMENT — À REPASSER À true DÈS QUE LE BUCKET OVH EXISTE
+    # ACTIVÉ le 2026-08-08, après création du bucket OVH.
     #
-    # Pourquoi : avec un bucket inexistant et des credentials factices, l'agent
-    # PBM boucle sur
+    # ⚠️ NE JAMAIS RÉACTIVER CE BLOC SANS AVOIR VALIDÉ LE BUCKET D'ABORD.
+    # Le 2026-08-06, avec un bucket inexistant et des credentials factices,
+    # l'agent PBM bouclait sur
     #     check storage connection: ... get S3 object header: operation error
     #     S3: HeadObject
-    # et l'opérateur reste bloqué à cette étape de la réconciliation. Il
-    # n'atteint donc JAMAIS la création des utilisateurs de spec.users : le
-    # cluster reste en `initializing`, aucun compte applicatif n'existe, et la
-    # base est inutilisable. Constaté le 2026-08-06.
+    # et l'opérateur restait bloqué à cette étape de la réconciliation. Il
+    # n'atteignait donc JAMAIS la création des utilisateurs de spec.users : le
+    # cluster restait en `initializing`, aucun compte applicatif n'existait.
     #
-    # Désactiver ne retire aucune protection réelle : il n'y avait aucun backup,
-    # PBM étant en échec. Ça rend l'état honnête et débloque les utilisateurs.
+    # Validation faite le 2026-08-08 avant activation, sur le bucket ci-dessous
+    # et avec les credentials de mongo-prod-backup-s3 :
+    #     HEAD 200 · PUT 200 · GET 200 · DELETE 204
+    # Cloisonnement vérifié : l'utilisateur S3 « upload » reçoit 403 sur ce
+    # bucket. Refaire ce test avant toute rotation de credentials ou changement
+    # de bucket — c'est cinq minutes qui évitent de casser le cluster.
     #
-    # POUR RÉACTIVER (§4.1 et §4.3 du doc) :
-    #   1. créer le bucket OVH
-    #   2. sops applications/mongodb-prod/mongo-backup-s3.secret.yaml
-    #   3. remplacer le nom de bucket CHANGEME ci-dessous
-    #   4. enabled: true
-    #   5. vérifier : kubectl -n mongodb-prod logs <pod> -c backup-agent
+    # ⚠️ VERSIONING ACTIF SUR CE BUCKET. `retention.deleteFromStorage: true`
+    # ci-dessous ne libère donc RIEN par lui-même : chaque suppression crée une
+    # version non-courante qui s'accumule indéfiniment. Mesuré le 2026-08-08 :
+    # un PUT suivi d'un DELETE laisse 1 Version + 1 DeleteMarker. La rétention
+    # PBM est cosmétique sans une lifecycle rule OVH portant
+    # `NoncurrentVersionExpiration` (30 j) et `ExpiredObjectDeleteMarker: true`.
     #
-    # L'alerte PSMDBNoBackupEver se déclenche tant que ce n'est pas fait — c'est
-    # voulu, elle ne doit pas être silenciée.
+    # L'alerte PSMDBNoBackupEver reste légitime tant que le premier backup n'est
+    # pas passé. Le PITR ne démarre qu'après un backup de base abouti.
     ##########################################################################
-    enabled: false
+    enabled: true
     image: percona/percona-backup-mongodb:2.15.0
     resources:
       requests:
@@ -307,10 +311,14 @@ spec:
         main: true
         type: s3
         s3:
-          # ⚠️ À renseigner après création du bucket OVH (voir le doc).
-          bucket: CHANGEME-homelab-mongodb-backups
-          region: gra
-          endpointUrl: https://s3.gra.io.cloud.ovh.net
+          # Bucket OVH créé le 2026-08-08. Région eu-west-par (3-AZ) : la
+          # durabilité prime pour des backups, la latence n'a aucune importance.
+          # endpointUrl attend le schéma ET pas de slash final — contrairement à
+          # `etcd-s3-endpoint` côté k3s, qui veut le hostname nu. Les deux
+          # formats diffèrent, c'est une source d'erreur classique.
+          bucket: wrathful-millikan-mdohr
+          region: eu-west-par
+          endpointUrl: https://s3.eu-west-par.io.cloud.ovh.net
           prefix: mongodb-prod
           credentialsSecret: mongo-prod-backup-s3
           retryer:
