@@ -10,6 +10,9 @@ resources:
   - applicationset.yaml
   - project.yaml
   - repo-ssh.secret.yaml
+  # Gabarit couvrant git@github.com:dohr-michael/* — nécessaire pour que les
+  # Application pointant sur temper-deploy.git trouvent une credential.
+  - repo-creds-github.secret.yaml
 
 patches:
   # Active le mode insecure (TLS terminé par Caddy)

@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# PAS de `namespace:` ici, volontairement : le transformer réécrirait le
+# `namespace: argocd` de 20-application.yaml vers `temper-prod`, et ArgoCD
+# ne réconcilierait jamais cette Application (il ne surveille que son propre
+# namespace). Même raison que dans applications/cluster-baseline.
+# Chaque ressource porte donc son namespace explicitement.
+
+resources:
+  - 00-namespace.yaml
+  - 20-application.yaml
+
+generators:
+  - ksops-generator.yaml

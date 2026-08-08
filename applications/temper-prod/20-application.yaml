@@ -1,0 +1,45 @@
+##############################################################################
+# Application ArgoCD qui déploie le workload temper depuis temper-deploy.git.
+#
+# Voir applications/temper-dev/20-application.yaml pour le détail du pattern
+# app-of-apps et le piège du transformer `namespace:`.
+#
+# DIFFÉRENCE DEV / PROD — elle n'est PAS dans ArgoCD.
+#   Les deux environnements sont en `automated: prune + selfHeal`. Ce qui
+#   protège la prod, c'est la **protection de branche GitHub** sur `prod` :
+#   pas de push direct, merge par pull request uniquement. Une fois la PR
+#   fusionnée, ArgoCD déploie sans intervention.
+#
+#   ⚠️ Tant que la règle de protection n'existe pas sur `prod`, cette
+#   Application déploie n'importe quel push direct. La garantie est côté
+#   GitHub, pas ici — rien dans ce fichier ne la remplace.
+#
+#   À configurer sur le dépôt : Settings → Branches → Add rule sur `prod`,
+#   « Require a pull request before merging » et « Do not allow bypassing ».
+##############################################################################
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: temper-prod-workload
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: homelab
+
+  source:
+    repoURL: git@github.com:dohr-michael/temper-deploy.git
+    targetRevision: prod
+    path: .
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: temper-prod
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

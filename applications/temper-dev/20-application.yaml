@@ -1,0 +1,54 @@
+##############################################################################
+# Application ArgoCD qui déploie le workload temper depuis temper-deploy.git.
+#
+# PATTERN app-of-apps : l'ApplicationSet de argocd/applicationset.yaml découvre
+# `applications/temper-dev/` et crée l'Application `temper-dev`, qui pose le
+# namespace + les secrets. Cette Application-ci, imbriquée, va chercher les
+# manifestes applicatifs dans un dépôt séparé.
+#
+# Pourquoi deux dépôts : les credentials restent dans homelab-infra (chiffrés
+# SOPS), temper-deploy ne contient que du manifeste. Une fuite de temper-deploy
+# — qui est PUBLIC — n'expose donc rien.
+#
+# ⚠️ `metadata.namespace: argocd` est OBLIGATOIRE : ArgoCD ne surveille les
+# Application que dans son propre namespace. C'est pour ça que
+# kustomization.yaml n'a PAS de transformer `namespace:` — il réécrirait cette
+# valeur vers `temper-dev` et l'Application ne serait jamais réconciliée.
+# Même piège que dans applications/cluster-baseline/kustomization.yaml.
+#
+# ⚠️ Le nom diffère de l'Application parente (`temper-dev`) : deux Application
+# ne peuvent pas porter le même nom dans le même namespace.
+##############################################################################
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: temper-dev-workload
+  namespace: argocd
+  finalizers:
+    # Supprime les ressources déployées quand l'Application disparaît.
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: homelab
+
+  source:
+    repoURL: git@github.com:dohr-michael/temper-deploy.git
+    # Branche par environnement. La branche `dev` est la cible du flux
+    # automatique : tout commit poussé dessus part en déploiement.
+    targetRevision: dev
+    # Racine du dépôt. À ajuster si temper-deploy s'organise en sous-dossiers
+    # (`k8s/`, `manifests/`…) plutôt qu'en branches pures.
+    path: .
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: temper-dev
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Le namespace est déjà créé par l'Application parente ; cette option
+      # évite un échec de sync si l'ordre d'application s'inverse.
+      - CreateNamespace=true
+      - ServerSideApply=true
