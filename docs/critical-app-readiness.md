@@ -1,8 +1,10 @@
 # Préparation du cluster à une application critique
 
-Statut : cluster k3s à 3 nœuds **en place**, manifestes prêts dans le repo,
-**commande OVH Object Storage et déploiement restant à faire**.
-Dernière révision : 2026-08-06.
+Statut : cluster k3s à 3 nœuds **en place**, socle **déployé**. Object Storage OVH
+créé, backups MongoDB et snapshots etcd **opérationnels**.
+Restent ouverts : la lifecycle rule OVH sur le bucket de backup (§4.1), le
+dead-man's switch externe et le test de restauration etcd (§7).
+Dernière révision : 2026-08-08.
 
 Ce document couvre l'accueil d'une application déployée deux fois (DEV et PROD) avec
 MongoDB en replica set, backups vers un blob storage OVH, RustFS comme S3 de dev,
@@ -18,12 +20,14 @@ Constats faits sur le cluster réel, pas sur le contenu du repo.
 |---|---|---|
 | `argocd-repo-server` en crashloop depuis **28 jours** → les 7 Applications en sync `Unknown`, aucun déploiement depuis 28 jours | bloquant | **corrigé** (pod recréé) |
 | etcd à **2 membres** : la majorité est de 2, donc perdre 1 VPS rend l'API server indisponible | bloquant | **résolu le 2026-08-06** — `vps-4541d883` (100.64.0.11) a rejoint, etcd est à 3 membres |
-| Snapshots etcd **locaux uniquement**, sur `vps-17435151` seul | bloquant | manifeste prêt, attend le bucket OVH |
+| Snapshots etcd **locaux uniquement**, sur `vps-17435151` seul | bloquant | **résolu le 2026-08-08** — les 3 nœuds poussent vers `eatable-wigner-mdohr` (§4.6) |
 | `vps-17435151` taint `CriticalAddonsOnly=true:NoSchedule` → rien ne s'y schedule, tout est sur `vps-a7c3e9b8` | élevée | **contourné** par toleration explicite dans les CR MongoDB |
 | Aucun monitoring ni alerting (seul `metrics-server`) | élevée | **ajouté** (`applications/monitoring`) |
 | `local-path` en `reclaimPolicy: Delete` : supprimer un PVC efface les données | élevée | **corrigé** (`local-path-retain`) |
-| Métriques etcd non exposées (`127.0.0.1:2381` seulement) | moyenne | **1 nœud sur 3** — activé sur `vps-4541d883`, reste à faire sur les deux anciens (§4.6) |
+| Métriques etcd non exposées (`127.0.0.1:2381` seulement) | moyenne | **résolu le 2026-08-08** — les 3 membres exposent 600+ séries `etcd_*` (§4.6) |
 | ns `tinypaw` et `ai` présents dans le cluster, absents de git | faible | à réconcilier ou assumer |
+| Applications `frp`, `bdd`, `n8n` | faible | **supprimées le 2026-08-08** — frp inutilisé (et un listener public de moins), n8n vide, son Postgres sans sauvegarde depuis 178 j sur un PVC en `Delete` |
+| DaemonSets GPU `nvidia-device-plugin` / `amdgpu-device-plugin` | faible | **à supprimer** — tournaient sur les 3 VPS sans GPU et n'atteignaient jamais `gmk-ai-master` ; aucun pod ne demande de ressource GPU, l'ai-stack passe par `/dev/dri` en hostPath |
 | **Traefik joignable depuis Internet** : ServiceLB (hostPort + NodePort) contourne ufw, donc le filtre `100.64.0.0/16` de Caddy. n8n et ArgoCD étaient publics | **critique** | **corrigé le 2026-08-06** — `loadBalancerSourceRanges` + `allocateLoadBalancerNodePorts: false` (`cluster-baseline/30-traefik-lb.yaml`) |
 | **`vps-17435151` sans pare-feu** : `ufw` installé mais `inactive`, API server (6443) et kubelet (10250) sur Internet en v4 et v6 | **critique** | **corrigé le 2026-08-06** — `infra/fixes/ufw-baseline.sh` |
 | **MongoDB refuse tout kernel >= 6.19** (SERVER-121912, TCMalloc vs rseq) — sans borne haute, testé jusqu'à l'image 8.3.7-1 sur kernel 7.1.6 | **structurel** | **arbitré le 2026-08-06** (§8) : cluster de dev supprimé, dev vit sur le RS de prod isolé par base. Prod tient parce que les VPS sont en 6.8/6.11 |
