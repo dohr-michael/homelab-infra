@@ -328,7 +328,14 @@ spec:
 
     # Point-in-time recovery : PBM pousse les chunks d'oplog en continu.
     # Sans ça, le RPO est l'intervalle entre deux backups (24 h).
-    # Nécessite au moins un backup de base terminé pour démarrer.
+    # Nécessite au moins un backup de base terminé pour démarrer — amorcé le
+    # 2026-08-08 par un backup manuel (138,65 Ko pour 266 Mo de données).
+    #
+    # ⚠️ LA FENÊTRE PITR RÉELLE EST BORNÉE PAR LE PLUS ANCIEN BACKUP DE BASE
+    # SURVIVANT, pas par le nombre de backups. Supprimer un backup de base
+    # supprime les chunks d'oplog qui s'appuient dessus. C'est la tâche
+    # `monthly-logical` (count: 12) qui donne donc une fenêtre d'un an — et
+    # c'est elle qui détermine le volume d'oplog conservé.
     pitr:
       enabled: true
       oplogOnly: false
@@ -336,6 +343,40 @@ spec:
       compressionType: gzip
       compressionLevel: 6
 
+    ##########################################################################
+    # ROULEMENT GRAND-PÈRE / PÈRE / FILS — arbitré le 2026-08-08
+    #
+    # `retention.type` ne supporte QUE `count` : pas de rétention temporelle.
+    # Une durée s'exprime donc en nombre de backups cohérent avec le cron.
+    # La rétention s'applique PAR TÂCHE, indépendamment : les tâches ne se
+    # suppriment pas mutuellement leurs backups. C'est ce qui rend ce schéma
+    # possible.
+    #
+    #   14 quotidiens  → 2 semaines de granularité fine
+    #    8 hebdo       → 2 mois
+    #   12 mensuels    → 1 an, et donc 1 an de fenêtre PITR
+    #
+    # Ces comptes sont généreux volontairement : un backup pèse ~139 Ko. Un an
+    # complet tient largement sous le gigaoctet. Le facteur limitant n'est pas
+    # le stockage mais le volume d'oplog retenu par le plus ancien mensuel.
+    #
+    # `weekly-physical` a été SUPPRIMÉE. Les backups physiques servent à
+    # restaurer vite de gros volumes et ne supportent pas le PITR ; à 266 Mo un
+    # restore logique prend quelques secondes. À reconsidérer si la base
+    # atteint plusieurs dizaines de Go — au même moment que le cacheSizeRatio.
+    #
+    # HORAIRES ESPACÉS, ce n'est pas cosmétique : un backup bloqué retient le
+    # lease `psmdb-mongo-prod-backup-lock`, et l'opérateur refuse alors tout
+    # SmartUpdate ("waiting for running backups to be finished"). Constaté le
+    # 2026-08-08 : deux backups fantômes de l'ère CHANGEME ont empêché le
+    # déploiement du sidecar backup-agent jusqu'à leur suppression manuelle.
+    #
+    # STRATÉGIE DE PURGE : `deleteFromStorage: true` — PBM reste la source de
+    # vérité sur ce qui est restaurable, et la lifecycle rule OVH ne fait que
+    # récupérer l'espace des versions déjà logiquement supprimées. L'alternative
+    # (`false` + tout déléguer à OVH) a été écartée : elle laisse le catalogue
+    # PBM lister des backups dont les fichiers ont disparu.
+    ##########################################################################
     tasks:
       - name: daily-logical
         enabled: true
@@ -346,18 +387,29 @@ spec:
         # marque pourtant pas required — aucun validateur statique ne l'attrape.
         storageName: ovh-s3
         retention:
-          count: 7
+          count: 14
           type: count
           deleteFromStorage: true
         compressionType: gzip
         compressionLevel: 6
-      - name: weekly-physical
+      - name: weekly-logical
         enabled: true
-        schedule: "0 4 * * 0"
-        type: physical
+        schedule: "0 3 * * 0"
+        type: logical
         storageName: ovh-s3
         retention:
-          count: 4
+          count: 8
+          type: count
+          deleteFromStorage: true
+        compressionType: gzip
+        compressionLevel: 6
+      - name: monthly-logical
+        enabled: true
+        schedule: "0 4 1 * *"
+        type: logical
+        storageName: ovh-s3
+        retention:
+          count: 12
           type: count
           deleteFromStorage: true
         compressionType: gzip

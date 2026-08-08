@@ -257,6 +257,41 @@ Access à 30 j et de l'expiration à 180 j :
 
 Sans ces deux clauses, le bucket grossit indéfiniment malgré la rétention PBM.
 
+**Répartition des rôles, arbitrée le 2026-08-08.** PBM garde `deleteFromStorage:
+true` et reste la source de vérité sur ce qui est restaurable ; la lifecycle OVH
+ne fait que récupérer l'espace des versions que PBM a déjà logiquement
+supprimées. L'alternative documentée par Percona — `deleteFromStorage: false` et
+tout déléguer aux politiques natives du cloud — a été écartée : elle laisse le
+catalogue PBM lister des backups dont les fichiers ont disparu, donc un écart
+entre ce qu'on croit restaurable et ce qui l'est.
+
+Conséquence à accepter : un backup sorti de la rétention à J+14 n'est réellement
+effacé du stockage que 30 jours plus tard.
+
+**Roulement en place** — `retention.type` ne supporte que `count`, jamais une
+durée ; une durée s'exprime donc en nombre de backups cohérent avec le cron. La
+rétention s'applique **par tâche**, indépendamment, ce qui permet un schéma
+grand-père/père/fils :
+
+| Tâche | Cron | Rétention | Couvre |
+|---|---|---|---|
+| `daily-logical` | `0 2 * * *` | 14 | 2 semaines, granularité fine |
+| `weekly-logical` | `0 3 * * 0` | 8 | 2 mois |
+| `monthly-logical` | `0 4 1 * *` | 12 | 1 an |
+
+⚠️ **La fenêtre PITR est bornée par le plus ancien backup de base survivant**,
+pas par le nombre de backups : supprimer un backup de base efface les chunks
+d'oplog qui s'appuient dessus. C'est donc `monthly-logical` qui donne la fenêtre
+d'un an, et c'est elle qui détermine le volume d'oplog conservé.
+
+La tâche `weekly-physical` a été supprimée : les backups physiques ne supportent
+pas le PITR et servent à restaurer vite de gros volumes, alors qu'un restore
+logique de 266 Mo prend quelques secondes. À reconsidérer à plusieurs dizaines
+de Go, en même temps que le `cacheSizeRatio`.
+
+Les horaires sont espacés volontairement : un backup bloqué retient le lease
+`psmdb-mongo-prod-backup-lock` et l'opérateur refuse alors tout SmartUpdate.
+
 **Avant toute rotation de credentials ou changement de bucket**, refaire la validation
 HEAD/PUT/GET/DELETE : c'est ce qui garantit qu'on ne rejoue pas la panne du 2026-08-06
 (bucket injoignable → PBM boucle → l'opérateur n'atteint jamais la création des comptes).
