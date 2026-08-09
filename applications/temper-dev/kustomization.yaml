@@ -6,6 +6,16 @@ kind: Kustomization
 # ne réconcilierait jamais cette Application (il ne surveille que son propre
 # namespace). Même raison que dans applications/cluster-baseline.
 # Chaque ressource porte donc son namespace explicitement.
+#
+# ⚠️ CONTREPARTIE, ET ELLE A DÉJÀ MORDU : sans transformer, rien ne corrige un
+# namespace erroné. Le 2026-08-09, 11-docker-secrets.secret.yaml a été copié de
+# temper-dev vers temper-prod en gardant `namespace: temper-dev` — les deux
+# Applications visaient alors le MÊME objet ("is part of applications
+# temper-dev and temper-prod"), et temper-prod se retrouvait sans secret de
+# pull, donc incapable de tirer ses images.
+#
+# En ajoutant une ressource ici, VÉRIFIER son `namespace:` — il doit valoir
+# `temper-dev`, sauf 20-application.yaml qui doit rester dans `argocd`.
 
 resources:
   - 00-namespace.yaml
