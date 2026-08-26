@@ -8,7 +8,7 @@ Homelab infrastructure on K3S, managed via ArgoCD GitOps. Inférence LLM actuell
 
 ## Architecture
 
-Cluster K3S (k3s `v1.34.3`) — 5 nœuds enregistrés :
+Cluster K3S (k3s `v1.34.3`) — 4 nœuds enregistrés :
 
 | Nœud | IP Headscale | Rôle |
 |------|----------------|------|
@@ -16,12 +16,10 @@ Cluster K3S (k3s `v1.34.3`) — 5 nœuds enregistrés :
 | `vps-17435151` | `100.64.0.3` | control-plane + etcd. Taint `CriticalAddonsOnly=true:NoSchedule` |
 | `vps-4541d883` | `100.64.0.11` | control-plane + etcd. ArgoCD (`role.homelab/platform`) |
 | `gmk-ai-master` | `100.64.0.4` | agent GPU Strix Halo. Taint `dedicated=ai:NoSchedule`, label `gpu-type=strix-halo`. RustFS + monitoring (`role.homelab/rustfs`, `role.homelab/monitoring`) |
-| `gpu-worker-1060` | `100.64.0.5` | GTX 1060, **NotReady / unreachable**. Enregistré dans K3S mais inutilisable pour le scheduling |
 
 MongoDB prod : replica set sur les 3 VPS (`role.homelab/mongodb-prod`). PostgreSQL prod : CloudNativePG 1.30, 1 instance (`role.homelab/postgres-prod`, aujourd’hui `vps-4541d883`). Labels de nœuds : `infra/label-nodes.sh`.
 
 - **GMK / LLM** : Ollama tourne **sur l’hôte**, pas comme Deployment K3S. Exposé hors cluster (VPN). **Inaccessible depuis les pods** — pas de Service cluster pour l’instant. Suite prévue : `Service` + `Endpoints` (ou ExternalName) vers l’URL Ollama, même pattern que whisper / ComfyUI.
-- **GTX 1060 / STT** : `whisper-server.service` sur la machine, exposé au cluster via `Service` + `Endpoints` → `100.64.0.5:9000` (`applications/ai-stack/10-whisper.yaml`). Manifest commenté dans le kustomization — non déployé.
 - **Image gen** : ComfyUI sur l’hôte GMK, pattern `Service` + `Endpoints` → `100.64.0.4:8000` (`20-sd-server.yaml`). Idem, commenté / non déployé.
 - **ArgoCD** (`argocd/`) : GitOps, `kubectl apply -k argocd/`. Version pinée `v3.3.0`.
 - **ApplicationSet** : auto-découvre `applications/*/` et déploie.

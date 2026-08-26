@@ -31,7 +31,6 @@ Constats faits sur le cluster réel, pas sur le contenu du repo.
 | **Traefik joignable depuis Internet** : ServiceLB (hostPort + NodePort) contourne ufw, donc le filtre `100.64.0.0/16` de Caddy. n8n et ArgoCD étaient publics | **critique** | **corrigé le 2026-08-06** — `loadBalancerSourceRanges` + `allocateLoadBalancerNodePorts: false` (`cluster-baseline/30-traefik-lb.yaml`) |
 | **`vps-17435151` sans pare-feu** : `ufw` installé mais `inactive`, API server (6443) et kubelet (10250) sur Internet en v4 et v6 | **critique** | **corrigé le 2026-08-06** — `infra/fixes/ufw-baseline.sh` |
 | **MongoDB refuse tout kernel >= 6.19** (SERVER-121912, TCMalloc vs rseq) — sans borne haute, testé jusqu'à l'image 8.3.7-1 sur kernel 7.1.6 | **structurel** | **arbitré le 2026-08-06** (§8) : cluster de dev supprimé, dev vit sur le RS de prod isolé par base. Prod tient parce que les VPS sont en 6.8/6.11 |
-| `gpu-worker-1060` NotReady depuis longtemps | faible | hors sujet ici |
 
 ### Cause racine du blocage ArgoCD, pour mémoire
 
@@ -50,7 +49,6 @@ mode de panne.
 | `vps-17435151` | 4 | 8 Go | 64 Go | control-plane + etcd, **tainté** |
 | `vps-4541d883` | 4 | 8 Go | — | control-plane + etcd, rejoint le 2026-08-06, non tainté |
 | `gmk-ai-master` | 32 | 48 Go | 950 Go | agent GPU, taint `dedicated=ai` |
-| `gpu-worker-1060` | — | — | — | NotReady |
 
 C'est cette asymétrie qui dicte toute la suite : **8 Go par VPS** interdit d'y faire
 tenir deux environnements MongoDB, et `gmk-ai-master` est la seule vraie capacité.
