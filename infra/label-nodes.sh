@@ -46,6 +46,12 @@ MONITORING_NODES=(gmk-ai-master)
 # d'explosion — reconstruire vps-a7c3e9b8 n'emportera plus ArgoCD avec lui.
 PLATFORM_NODES=(vps-4541d883)
 
+# --- PostgreSQL prod (CloudNativePG, 1 instance) ---------------------------
+# Un seul nœud : PG est plus lourd qu'un secondary Mongo, et les 3 VPS
+# portent déjà mongod. vps-4541d883 est le moins chargé. Le PV est local :
+# déplacer le label ne déplace pas les données.
+POSTGRES_NODES=(vps-4541d883)
+
 label() {
   local key=$1; shift
   for node in "$@"; do
@@ -64,8 +70,10 @@ echo "role.homelab/monitoring :"
 label role.homelab/monitoring "${MONITORING_NODES[@]}"
 echo "role.homelab/platform :"
 label role.homelab/platform "${PLATFORM_NODES[@]}"
+echo "role.homelab/postgres-prod :"
+label role.homelab/postgres-prod "${POSTGRES_NODES[@]}"
 
 echo
 echo "Labels role.homelab/* posés :"
 kubectl get nodes \
-  -L role.homelab/mongodb-prod,role.homelab/mongodb-dev,role.homelab/rustfs,role.homelab/monitoring,role.homelab/platform
+  -L role.homelab/mongodb-prod,role.homelab/mongodb-dev,role.homelab/rustfs,role.homelab/monitoring,role.homelab/platform,role.homelab/postgres-prod

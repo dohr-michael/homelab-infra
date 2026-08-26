@@ -1,0 +1,59 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: cnpg-operator
+
+resources:
+  - 00-namespace.yaml
+  - 10-crd.yaml # vendorisé depuis v1.30.0, ne pas éditer à la main
+  - 20-rbac.yaml
+  - 30-operator.yaml
+  - 40-metrics.yaml
+
+patches:
+  ##########################################################################
+  # ServerSideApply=true est OBLIGATOIRE, pas une optimisation.
+  #
+  # Le CRD clusters.postgresql.cnpg.io pèse ~1 Mo. Un apply côté client
+  # stocke le manifeste dans l'annotation
+  # kubectl.kubernetes.io/last-applied-configuration, dont la limite est de
+  # 262 144 octets → le sync échouerait sur
+  # "metadata.annotations: Too long".
+  #
+  # Prune=false protège les CRDs : sans ça, supprimer l'Application
+  # cnpg-operator supprimerait les CRDs, donc en cascade tous les Cluster
+  # et leurs PVC.
+  ##########################################################################
+  - target:
+      group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+    patch: |
+      - op: add
+        path: /metadata/annotations/argocd.argoproj.io~1sync-options
+        value: ServerSideApply=true,Prune=false
+
+  - target:
+      kind: Deployment
+      name: cnpg-controller-manager
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value:
+          role.homelab/platform: "true"
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: homelab-platform
+
+generators:
+  - ksops-generator.yaml

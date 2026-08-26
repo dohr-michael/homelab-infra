@@ -1,0 +1,24 @@
+##############################################################################
+# Backup de base quotidien. Le PITR vient du WAL archivé en continu par
+# le Cluster (barmanObjectStore), pas de ce cron.
+#
+# Horaire à 05:00 : Mongo daily-logical tourne à 02:00, weekly à 03:00,
+# monthly à 04:00. Ne pas empiler les jobs S3.
+#
+# `immediate: true` déclenche un premier backup dès que le cluster est
+# ready — sans ça, CNPGNoBackupEver hurle jusqu'au lendemain 05:00.
+##############################################################################
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: daily
+  namespace: postgres-prod
+spec:
+  schedule: "0 0 5 * * *"
+  immediate: true
+  backupOwnerReference: self
+  method: barmanObjectStore
+  target: primary
+  cluster:
+    name: postgres-prod

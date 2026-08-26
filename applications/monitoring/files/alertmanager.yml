@@ -64,6 +64,12 @@ inhibit_rules:
     equal: [namespace]
 
   - source_matchers:
+      - alertname = "CNPGClusterNotReady"
+    target_matchers:
+      - alertname = "CNPGBackupStale"
+    equal: [namespace]
+
+  - source_matchers:
       - severity = "critical"
     target_matchers:
       - severity = "warning"

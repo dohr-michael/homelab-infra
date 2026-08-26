@@ -1,0 +1,8 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: postgres-prod
+  labels:
+    homelab.dohrm.fr/env: prod
+    homelab.dohrm.fr/tier: data

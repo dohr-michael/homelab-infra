@@ -1,0 +1,49 @@
+##############################################################################
+# Modèle pour créer une base applicative.
+#
+# Copier ce fichier en `20-<app>.yaml` + `<app>-user.secret.yaml`, chiffrer
+# le secret, les ajouter à kustomization.yaml et ksops-generator.yaml.
+#
+# databaseReclaimPolicy / databaseRoleReclaimPolicy : `retain` (défaut).
+# Supprimer le CR NE DROP PAS la base ni le rôle — comme MongoDB, le DROP
+# est manuel. Passer à `delete` seulement si on assume la perte.
+#
+# Le Secret du rôle DOIT être `kubernetes.io/basic-auth` avec `username`
+# ET `password` (exigence CNPG 1.30, pas un secret opaque `password:`).
+##############################################################################
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: example-user
+  namespace: postgres-prod
+type: kubernetes.io/basic-auth
+stringData:
+  username: example
+  password: CHANGE-ME-THEN-SOPS-ENCRYPT
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: example
+  namespace: postgres-prod
+spec:
+  name: example
+  login: true
+  cluster:
+    name: postgres-prod
+  passwordSecret:
+    name: example-user
+  databaseRoleReclaimPolicy: retain
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: example
+  namespace: postgres-prod
+spec:
+  name: example
+  owner: example
+  cluster:
+    name: postgres-prod
+  databaseReclaimPolicy: retain

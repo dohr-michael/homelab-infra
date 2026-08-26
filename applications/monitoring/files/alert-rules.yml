@@ -509,3 +509,60 @@ groups:
             lag durable finit par bloquer les écritures en w:majority.
             Vérifier l'unité de mongodb_rs_members_optimeDate (s ou ms) au
             premier déclenchement.
+
+  # ==========================================================================
+  - name: cnpg-state
+    interval: 1m
+    rules:
+      - alert: CNPGClusterNotReady
+        expr: |
+          cnpg_cluster_ready_instances < cnpg_cluster_instances
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Cluster PostgreSQL {{ $labels.namespace }}/{{ $labels.name }} pas ready"
+          description: >-
+            {{ $labels.namespace }}/{{ $labels.name }} : instances prêtes
+            inférieures au nombre attendu. Avec 1 instance, la base est
+            indisponible.
+
+  # ==========================================================================
+  - name: cnpg-backup
+    interval: 5m
+    rules:
+      - alert: CNPGBackupFailed
+        expr: cnpg_backup_phase{phase="failed"} == 1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backup PostgreSQL en erreur : {{ $labels.namespace }}/{{ $labels.name }}"
+          description: >-
+            Cluster {{ $labels.cluster }}. Vérifier les credentials S3 et
+            l'existence du préfixe. Un archive_command en échec remplit le PVC.
+
+      - alert: CNPGBackupStale
+        expr: |
+          time() - max by (namespace) (cnpg_cluster_last_successful_backup_timestamp_seconds)
+            > 36 * 3600
+        labels:
+          severity: critical
+        annotations:
+          summary: "Aucun backup PostgreSQL de base depuis plus de 36 h dans {{ $labels.namespace }}"
+          description: >-
+            Le backup quotidien tourne à 05:00. Le PITR (WAL) peut encore
+            tourner, mais sans backup de base récent la fenêtre de restore
+            se réduit.
+
+      - alert: CNPGNoBackupEver
+        expr: |
+          absent(cnpg_cluster_last_successful_backup_timestamp_seconds{namespace="postgres-prod"})
+        for: 6h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Aucun backup PostgreSQL de production n'a jamais abouti"
+          description: >-
+            Ni PITR ni restauration ne sont possibles en l'état. Remplir
+            postgres-backup-s3.secret.yaml avant toute mise en service.

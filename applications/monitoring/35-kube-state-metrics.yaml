@@ -66,6 +66,12 @@ rules:
       - perconaservermongodbbackups
       - perconaservermongodbrestores
     verbs: [list, watch]
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources:
+      - clusters
+      - backups
+      - scheduledbackups
+    verbs: [list, watch]
   - apiGroups: ["argoproj.io"]
     resources: [applications, applicationsets, appprojects]
     verbs: [list, watch]

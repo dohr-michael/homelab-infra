@@ -1,0 +1,133 @@
+##############################################################################
+# PostgreSQL PROD — CloudNativePG, 1 instance
+#
+# POURQUOI 1 INSTANCE, PAS UN RS À 3 COMME MONGODB
+#   Postgres réplique plus lourdement (copie physique + WAL). Les VPS sont à
+#   8 Go et portent déjà un membre mongod (limite 2 Gi). Un standby PG en plus
+#   n'apporte pas de quorum : avec 2 instances la perte du primaire reste un
+#   failover, avec 3 on paie 3× la RAM et le disque. 1 instance + backups S3
+#   + PITR (WAL continu) est le bon niveau ici. Monter `instances:` plus tard
+#   si besoin, sans changer le reste.
+#
+# PLACEMENT
+#   Label `role.homelab/postgres-prod=true`, aujourd'hui sur vps-4541d883
+#   (le moins chargé des 3 VPS). Déplacer le label = déplacer l'instance,
+#   mais le PV local-path est cloué au nœud : un move, c'est restore PBM
+#   (ici Barman) ou resync depuis un standby qu'on n'a pas. Voir
+#   infra/label-nodes.sh.
+#
+# TLS — CNPG termine en TLS (certificats auto-générés, comme Percona).
+#   Les clients in-cluster doivent passer `sslmode=require` (ou verify-full
+#   avec le CA du secret `<cluster>-ca`). Le trafic est déjà dans Headscale.
+#
+# BACKUPS — Barman in-tree (`.spec.backup.barmanObjectStore`).
+#   Le plugin Barman Cloud (CNPG-I) est le successeur, mais il exige
+#   cert-manager, absent du cluster. L'in-tree est déprécié et partira en
+#   1.31 : on migrera à ce moment-là, pas avant. Même bucket OVH que Mongo,
+#   préfixe `postgres-prod`.
+#
+#   ⚠️ NE PAS ACTIVER LE BLOC backup SANS CREDENTIALS S3 VALIDÉS.
+#   Un archive_command qui échoue laisse le WAL s'accumuler et finit par
+#   remplir le PVC. Leçon MongoDB 2026-08-06 (PBM bloquait la réconciliation).
+#
+# AJOUTER UNE BASE = un Database + un DatabaseRole + un Secret, pas un
+#   champ dans ce Cluster. Voir 20-database.example.yaml.
+##############################################################################
+
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-prod
+  namespace: postgres-prod
+spec:
+  instances: 1
+  # `system` (pas `standard`) : contient les binaires Barman nécessaires
+  # à l'archivage WAL in-tree. Les images system partent avec Barman in-tree
+  # en 1.31 — même échéance que la migration vers le plugin.
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie
+  imagePullPolicy: IfNotPresent
+
+  enableSuperuserAccess: true
+  enablePDB: true
+
+  logLevel: info
+
+  # Bootstrap : CNPG crée toujours une base/rôle `app` (secret
+  # `postgres-prod-app`). On ne s'en sert pas — les vraies bases passent
+  # par un CR `Database`. Ne pas mettre `database: postgres` ici : initdb
+  # essaierait un CREATE DATABASE postgres et échouerait.
+
+  affinity:
+    nodeSelector:
+      role.homelab/postgres-prod: "true"
+    podAntiAffinityType: preferred
+    tolerations:
+      - key: CriticalAddonsOnly
+        operator: Equal
+        value: "true"
+        effect: NoSchedule
+
+  priorityClassName: homelab-data
+
+  inheritedMetadata:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9187"
+      prometheus.io/path: /metrics
+
+  monitoring:
+    disableDefaultQueries: false
+    enablePodMonitor: false
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1536Mi
+
+  postgresql:
+    parameters:
+      # 256 Mo sur une limite à 1,5 Gi : assez pour un dataset homelab,
+      # assez peu pour ne pas OOM le VPS à côté de mongod.
+      shared_buffers: "256MB"
+      max_connections: "100"
+      log_min_duration_statement: "200ms"
+
+  storage:
+    storageClass: local-path-retain
+    size: 20Gi
+
+  backup:
+    ##########################################################################
+    # WAL continu → S3 = PITR. Le RPO n'est pas l'intervalle du
+    # ScheduledBackup (24 h) : c'est le dernier segment WAL poussé.
+    #
+    # target: primary — il n'y a pas de standby.
+    #
+    # Rétention 30 j, plus simple que le GFS Mongo : un backup de base
+    # quotidien + le WAL. Revoir si le volume S3 devient un sujet.
+    ##########################################################################
+    target: primary
+    retentionPolicy: "30d"
+    barmanObjectStore:
+      destinationPath: s3://wrathful-millikan-mdohr/postgres-prod
+      endpointURL: https://s3.eu-west-par.io.cloud.ovh.net
+      s3Credentials:
+        accessKeyId:
+          name: postgres-prod-backup-s3
+          key: AWS_ACCESS_KEY_ID
+        secretAccessKey:
+          name: postgres-prod-backup-s3
+          key: AWS_SECRET_ACCESS_KEY
+        region:
+          name: postgres-prod-backup-s3
+          key: AWS_REGION
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        jobs: 2

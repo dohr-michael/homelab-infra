@@ -106,3 +106,60 @@ spec:
               labelName: health_status
               path: [status, health, status]
               list: [Healthy, Progressing, Degraded, Suspended, Missing, Unknown]
+
+    # ----------------------------------------------------------- CloudNativePG
+    - groupVersionKind:
+        group: postgresql.cnpg.io
+        version: v1
+        kind: Cluster
+      metricNamePrefix: cnpg_cluster
+      labelsFromPath:
+        name: [metadata, name]
+        namespace: [metadata, namespace]
+      metrics:
+        - name: ready_instances
+          help: "Instances PostgreSQL prêtes"
+          each:
+            type: Gauge
+            gauge:
+              path: [status, readyInstances]
+              nilIsZero: true
+        - name: instances
+          help: "Instances PostgreSQL attendues"
+          each:
+            type: Gauge
+            gauge:
+              path: [status, instances]
+              nilIsZero: true
+        - name: last_successful_backup_timestamp_seconds
+          help: "Date du dernier backup de base abouti (epoch)"
+          each:
+            type: Gauge
+            gauge:
+              path: [status, lastSuccessfulBackup]
+
+    - groupVersionKind:
+        group: postgresql.cnpg.io
+        version: v1
+        kind: Backup
+      metricNamePrefix: cnpg_backup
+      labelsFromPath:
+        name: [metadata, name]
+        namespace: [metadata, namespace]
+        cluster: [spec, cluster, name]
+      metrics:
+        - name: phase
+          help: "Phase du backup Barman rapportée par CNPG"
+          each:
+            type: StateSet
+            stateSet:
+              labelName: phase
+              path: [status, phase]
+              list: [pending, started, running, completed, failed, walArchivingFailing]
+        - name: completed_timestamp_seconds
+          help: "Date de fin de réconciliation du backup (epoch)"
+          each:
+            type: Gauge
+            gauge:
+              path: [status, reconciliationTerminatedAt]
+
