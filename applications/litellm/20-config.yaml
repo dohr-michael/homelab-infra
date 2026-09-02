@@ -1,0 +1,38 @@
+##############################################################################
+# Modèles en GitOps (pas STORE_MODEL_IN_DB). Postgres = keys / spend / UI.
+#
+# llama-cpp : serveur llama.cpp (un seul modèle chargé à la fois), API
+# OpenAI-compatible sur /v1. Le nom du modèle n'est pas vérifié côté serveur.
+# Clés cloud : sops applications/litellm/litellm.secret.yaml
+##############################################################################
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: litellm
+data:
+  config.yaml: |
+    litellm_settings:
+      drop_params: true
+
+    model_list:
+      - model_name: llama-cpp
+        litellm_params:
+          model: openai/local
+          api_base: http://llama-cpp.litellm.svc:8080/v1
+          api_key: "sk-no-key-required"
+
+      - model_name: gemini
+        litellm_params:
+          model: gemini/gemini-2.5-flash
+          api_key: os.environ/GEMINI_API_KEY
+
+      - model_name: mistral
+        litellm_params:
+          model: mistral/mistral-large-latest
+          api_key: os.environ/MISTRAL_API_KEY
+
+      - model_name: deepseek
+        litellm_params:
+          model: deepseek/deepseek-chat
+          api_key: os.environ/DEEPSEEK_API_KEY

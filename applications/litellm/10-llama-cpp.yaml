@@ -1,0 +1,33 @@
+##############################################################################
+# llama.cpp server sur l'hôte GMK (100.64.0.4), hors cluster.
+# API OpenAI-compatible sur /v1 (un seul modèle chargé à la fois).
+##############################################################################
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llama-cpp
+  namespace: litellm
+  labels:
+    app: llama-cpp
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: llama-cpp
+  namespace: litellm
+subsets:
+  - addresses:
+      - ip: 100.64.0.4
+    ports:
+      - name: http
+        port: 8080
+        protocol: TCP
