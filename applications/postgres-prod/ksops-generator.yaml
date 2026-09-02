@@ -9,3 +9,4 @@ metadata:
         path: ksops
 files:
   - postgres-backup-s3.secret.yaml
+  - litellm-user.secret.yaml

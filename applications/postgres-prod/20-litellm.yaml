@@ -1,0 +1,30 @@
+##############################################################################
+# Base LiteLLM sur postgres-prod.
+# Reclaim retain : supprimer le CR ne DROP pas la base.
+##############################################################################
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: litellm
+  namespace: postgres-prod
+spec:
+  name: litellm
+  login: true
+  cluster:
+    name: postgres-prod
+  passwordSecret:
+    name: litellm-user
+  databaseRoleReclaimPolicy: retain
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: litellm
+  namespace: postgres-prod
+spec:
+  name: litellm
+  owner: litellm
+  cluster:
+    name: postgres-prod
+  databaseReclaimPolicy: retain

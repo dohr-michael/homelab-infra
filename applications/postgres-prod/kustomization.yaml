@@ -7,6 +7,7 @@ resources:
   - 00-namespace.yaml
   - 10-cluster.yaml
   - 11-scheduled-backup.yaml
+  - 20-litellm.yaml
   # Copier 20-database.example.yaml → 20-<app>.yaml pour créer une base.
 
 generators:
