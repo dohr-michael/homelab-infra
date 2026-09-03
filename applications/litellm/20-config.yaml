@@ -19,7 +19,7 @@ data:
       - model_name: llama-cpp
         litellm_params:
           model: openai/local
-          api_base: http://llama-cpp.litellm.svc:8080/v1
+          api_base: http://llama-cpp.litellm.svc.cluster.local:8080/v1
           api_key: "sk-no-key-required"
 
       - model_name: gemini
