@@ -21,6 +21,10 @@ data:
           model: openai/local
           api_base: http://llama-cpp.litellm.svc.cluster.local:8080/v1
           api_key: "sk-no-key-required"
+          extra_body:
+            chat_template_kwargs:
+              enable_thought: true
+          
 
       - model_name: gemini
         litellm_params:
