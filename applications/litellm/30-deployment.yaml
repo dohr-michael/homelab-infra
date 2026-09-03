@@ -36,6 +36,8 @@ spec:
               containerPort: 4000
               protocol: TCP
           env:
+            - name: LITELLM_DISABLE_NO_REDIS_WARNING
+              value: "true"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
