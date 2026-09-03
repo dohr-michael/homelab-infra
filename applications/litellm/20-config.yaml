@@ -16,14 +16,39 @@ data:
       drop_params: true
 
     model_list:
-      - model_name: llama-cpp
+      # 1. Pour tes agents de code (rapide, direct, sans monologue)
+      - model_name: qwen-coder
         litellm_params:
           model: openai/local
           api_base: http://llama-cpp.litellm.svc.cluster.local:8080/v1
           api_key: "sk-no-key-required"
+          temperature: 0.1
+          extra_body:
+            chat_template_kwargs:
+              enable_thought: false
+    
+      # 2. Pour l'analyse complexe / maths / architecture (réflexion profonde)
+      - model_name: qwen-reasoning
+        litellm_params:
+          model: openai/local
+          api_base: http://llama-cpp.litellm.svc.cluster.local:8080/v1
+          api_key: "sk-no-key-required"
+          temperature: 0.6
           extra_body:
             chat_template_kwargs:
               enable_thought: true
+            max_tokens_thinking: 4096
+    
+      # 3. Mode économique / rapide
+      - model_name: qwen-fast
+        litellm_params:
+          model: openai/local
+          api_base: http://llama-cpp.litellm.svc.cluster.local:8080/v1
+          api_key: "sk-no-key-required"
+          max_tokens: 1024
+          extra_body:
+            chat_template_kwargs:
+              enable_thought: false
           
 
       - model_name: gemini
