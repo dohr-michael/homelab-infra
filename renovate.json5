@@ -1,0 +1,59 @@
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: ['config:recommended'],
+  timezone: 'Europe/Zurich',
+
+  // Une passe le 1er du mois. Les composants d'ici bougent lentement et n8n
+  // sort des patchs tous les deux jours : suivre chaque release est du bruit.
+  schedule: ['* * 1 * *'],
+  prConcurrentLimit: 5,
+
+  // Les secrets SOPS ne contiennent pas d'image, mais aucun robot n'y écrit.
+  ignorePaths: ['**/*.secret.yaml'],
+
+  // Le manager kubernetes n'a aucun pattern par défaut (pas de convention de
+  // nommage universelle pour les manifests) — il faut le lui donner.
+  kubernetes: {
+    managerFilePatterns: ['/^applications/.+\\.ya?ml$/'],
+  },
+
+  // argocd/kustomization.yaml pointe une URL raw.githubusercontent que le
+  // manager kustomize ne sait pas lire.
+  customManagers: [
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/^argocd/kustomization\\.ya?ml$/'],
+      matchStrings: ['argoproj/argo-cd/(?<currentValue>v[\\d.]+)/manifests'],
+      depNameTemplate: 'argoproj/argo-cd',
+      datasourceTemplate: 'github-releases',
+    },
+  ],
+
+  packageRules: [
+    {
+      description: "Les versions d'API Kubernetes se migrent à la main, pas par PR.",
+      matchDatasources: ['kubernetes-api'],
+      enabled: false,
+    },
+    {
+      description: "Laisser mûrir une semaine — pas de release de 24 h en prod.",
+      matchDatasources: ['docker'],
+      minimumReleaseAge: '7 days',
+    },
+    {
+      description: "n8n promeut `stable` bien plus lentement que ses tags Docker, et applique au démarrage des migrations DB qui ne se rollbackent pas. 14 j approxime ce délai de promotion.",
+      matchPackageNames: ['/n8nio/'],
+      minimumReleaseAge: '14 days',
+    },
+    {
+      description: 'Un major ne part jamais sans lecture des breaking changes : approbation via le Dependency Dashboard.',
+      matchUpdateTypes: ['major'],
+      dependencyDashboardApproval: true,
+    },
+    {
+      description: 'ArgoCD porte le GitOps lui-même — toute version passe par une approbation manuelle.',
+      matchPackageNames: ['argoproj/argo-cd'],
+      dependencyDashboardApproval: true,
+    },
+  ],
+}
