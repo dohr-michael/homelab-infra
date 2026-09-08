@@ -1,0 +1,174 @@
+##############################################################################
+# n8n — automation, 1 replica, base sur postgres-prod (CNPG).
+#
+# PVC
+#   n8n 2.0 a supprimé le mode binaire "in-memory" : le défaut hors queue mode
+#   est `filesystem`, donc /home/node/.n8n doit être persistant (binaires
+#   d'exécution + clés SSH des nodes Git). local-path-retain = le PV survit à
+#   la suppression du PVC, mais il est cloué au nœud où le pod démarre la
+#   première fois (WaitForFirstConsumer). Déplacer n8n = recréer le PVC.
+#
+# TLS Postgres
+#   CNPG termine en TLS avec un CA auto-généré, et son secret `postgres-prod-ca`
+#   vit dans le namespace postgres-prod — inaccessible ici. On chiffre le
+#   transport sans vérifier le cert (le trafic reste intra-cluster).
+##############################################################################
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: n8n-data
+  namespace: n8n
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path-retain
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: n8n
+  namespace: n8n
+  labels:
+    app: n8n
+spec:
+  replicas: 1
+  # Recreate : le PVC est ReadWriteOnce, deux pods ne peuvent pas le monter.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: n8n
+  template:
+    metadata:
+      labels:
+        app: n8n
+    spec:
+      # Pas de taint GPU, pas de CriticalAddonsOnly → VPS a7c3e9b8 ou 4541d883.
+      priorityClassName: homelab-platform
+      securityContext:
+        # L'image tourne en `node` (1000) ; local-path crée le dossier en root.
+        fsGroup: 1000
+      containers:
+        - name: n8n
+          image: docker.io/n8nio/n8n:2.37.10
+          imagePullPolicy: IfNotPresent
+          env:
+            # ── Base de données ──────────────────────────────────────────
+            - name: DB_TYPE
+              value: postgresdb
+            - name: DB_POSTGRESDB_HOST
+              value: postgres-prod-rw.postgres-prod.svc.cluster.local
+            - name: DB_POSTGRESDB_PORT
+              value: "5432"
+            - name: DB_POSTGRESDB_DATABASE
+              value: n8n
+            - name: DB_POSTGRESDB_USER
+              value: n8n
+            - name: DB_POSTGRESDB_SSL_ENABLED
+              value: "true"
+            - name: DB_POSTGRESDB_SSL_REJECT_UNAUTHORIZED
+              value: "false"
+            - name: DB_POSTGRESDB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: n8n
+                  key: DB_POSTGRESDB_PASSWORD
+
+            # ── URLs / reverse proxy ─────────────────────────────────────
+            # Caddy (100.64.0.1) termine le TLS et forward en clair à Traefik.
+            - name: N8N_HOST
+              value: n8n.home.dohrm.fr
+            - name: N8N_PROTOCOL
+              value: https
+            - name: N8N_PORT
+              value: "5678"
+            - name: WEBHOOK_URL
+              value: https://n8n.home.dohrm.fr/
+            - name: N8N_EDITOR_BASE_URL
+              value: https://n8n.home.dohrm.fr/
+            - name: N8N_PROXY_HOPS
+              value: "2"
+
+            # ── Divers ───────────────────────────────────────────────────
+            - name: N8N_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: n8n
+                  key: N8N_ENCRYPTION_KEY
+            - name: N8N_DEFAULT_BINARY_DATA_MODE
+              value: filesystem
+            - name: GENERIC_TIMEZONE
+              value: Europe/Zurich
+            - name: TZ
+              value: Europe/Zurich
+            - name: N8N_DIAGNOSTICS_ENABLED
+              value: "false"
+            # Purge les exécutions > 14 j, sinon la base grossit sans fin.
+            - name: EXECUTIONS_DATA_PRUNE
+              value: "true"
+            - name: EXECUTIONS_DATA_MAX_AGE
+              value: "336"
+
+          ports:
+            - name: http
+              containerPort: 5678
+              protocol: TCP
+
+          volumeMounts:
+            - name: data
+              mountPath: /home/node/.n8n
+
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 1536Mi
+
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: n8n-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: n8n
+  namespace: n8n
+  labels:
+    app: n8n
+spec:
+  type: ClusterIP
+  selector:
+    app: n8n
+  ports:
+    - name: http
+      port: 5678
+      targetPort: http
+      protocol: TCP

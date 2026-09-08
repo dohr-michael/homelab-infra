@@ -1,0 +1,30 @@
+##############################################################################
+# Base n8n sur postgres-prod.
+# Reclaim retain : supprimer le CR ne DROP pas la base.
+##############################################################################
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: n8n
+  namespace: postgres-prod
+spec:
+  name: n8n
+  login: true
+  cluster:
+    name: postgres-prod
+  passwordSecret:
+    name: n8n-user
+  databaseRoleReclaimPolicy: retain
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: n8n
+  namespace: postgres-prod
+spec:
+  name: n8n
+  owner: n8n
+  cluster:
+    name: postgres-prod
+  databaseReclaimPolicy: retain
