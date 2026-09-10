@@ -61,7 +61,53 @@ data:
           model: mistral/mistral-large-latest
           api_key: os.environ/MISTRAL_API_KEY
 
+      ########################################################################
+      # DeepSeek (https://api.deepseek.com) — lineup V4 :
+      #   deepseek-v4-flash  : rapide / éco (alias glissant vers la dernière
+      #                        version, aujourd'hui V4-Flash-0731)
+      #   deepseek-v4-pro    : raisonnement lourd (V4-Pro-0813), ~3x le prix
+      # Contexte 1M tokens, 393k tokens de sortie max pour les deux.
+      # Thinking mode est ON par défaut (effort `high`). On le pilote via
+      # extra_body (format OpenAI natif de DeepSeek) pour ne pas dépendre du
+      # mapping litellm. En thinking, temperature / top_p / penalties sont
+      # ignorés — d'où l'absence de temperature sur les modèles "reasoning".
+      ########################################################################
+
+      # 1. Chat / code au quotidien : réponse directe, pas de monologue
       - model_name: deepseek
         litellm_params:
-          model: deepseek/deepseek-chat
+          model: deepseek/deepseek-v4-flash
           api_key: os.environ/DEEPSEEK_API_KEY
+          temperature: 0.1
+          extra_body:
+            thinking:
+              type: disabled
+
+      # 2. Raisonnement à coût contenu (flash + thinking)
+      - model_name: deepseek-reasoning
+        litellm_params:
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
+          extra_body:
+            thinking:
+              type: enabled
+            reasoning_effort: high
+
+      # 3. Le gros calibre : archi / maths / debug retors
+      - model_name: deepseek-pro
+        litellm_params:
+          model: deepseek/deepseek-v4-pro
+          api_key: os.environ/DEEPSEEK_API_KEY
+          extra_body:
+            thinking:
+              type: enabled
+            reasoning_effort: max
+
+      # 4. Vision (expérimental côté DeepSeek, peut casser sans préavis)
+      - model_name: deepseek-vision
+        litellm_params:
+          model: deepseek/deepseek-v4-flash-vision-exp
+          api_key: os.environ/DEEPSEEK_API_KEY
+          extra_body:
+            thinking:
+              type: disabled
