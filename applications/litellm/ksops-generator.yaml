@@ -10,3 +10,4 @@ metadata:
 files:
   - litellm.secret.yaml
   - litellm-gemini.secret.yaml
+  - litellm-deepseek.secret.yaml

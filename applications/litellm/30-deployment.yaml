@@ -63,11 +63,11 @@ spec:
             #     secretKeyRef:
             #       name: litellm
             #       key: MISTRAL_API_KEY
-            # - name: DEEPSEEK_API_KEY
-            #   valueFrom:
-            #     secretKeyRef:
-            #       name: litellm
-            #       key: DEEPSEEK_API_KEY
+            - name: DEEPSEEK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-deepseek
+                  key: DEEPSEEK_API_KEY
           volumeMounts:
             - name: config
               mountPath: /app/config.yaml

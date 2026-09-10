@@ -26,7 +26,7 @@ data:
           extra_body:
             chat_template_kwargs:
               enable_thought: false
-    
+
       # 2. Pour l'analyse complexe / maths / architecture (réflexion profonde)
       - model_name: qwen-reasoning
         litellm_params:
@@ -38,7 +38,7 @@ data:
             chat_template_kwargs:
               enable_thought: true
             max_tokens_thinking: 4096
-    
+
       # 3. Mode économique / rapide
       - model_name: qwen-fast
         litellm_params:
@@ -49,11 +49,11 @@ data:
           extra_body:
             chat_template_kwargs:
               enable_thought: false
-          
 
-      - model_name: gemini
+
+      - model_name: gemini-3.8-flash
         litellm_params:
-          model: gemini/gemini-2.5-flash
+          model: gemini/gemini-3.8-flash
           api_key: os.environ/GEMINI_API_KEY
 
       - model_name: mistral
