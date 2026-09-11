@@ -25,9 +25,11 @@ data:
           temperature: 0.1
           extra_body:
             chat_template_kwargs:
-              enable_thought: false
+              enable_thinking: false
 
       # 2. Pour l'analyse complexe / maths / architecture (réflexion profonde)
+      #    Plafonner le thinking = `--reasoning-budget N` au lancement du
+      #    serveur ; aucun paramètre par requête ne le fait (testé b10664).
       - model_name: qwen-reasoning
         litellm_params:
           model: openai/local
@@ -36,8 +38,7 @@ data:
           temperature: 0.6
           extra_body:
             chat_template_kwargs:
-              enable_thought: true
-            max_tokens_thinking: 4096
+              enable_thinking: true
 
       # 3. Mode économique / rapide
       - model_name: qwen-fast
@@ -48,7 +49,7 @@ data:
           max_tokens: 1024
           extra_body:
             chat_template_kwargs:
-              enable_thought: false
+              enable_thinking: false
 
 
       - model_name: gemini-3.8-flash
