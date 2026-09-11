@@ -52,6 +52,14 @@ data:
               enable_thinking: false
 
 
+      # whisper.cpp server sur l'hôte GMK, exposé via Service/Endpoints
+      # (10-whisper-cpp.yaml) -> 100.64.0.4:8081.
+      - model_name: whisper-cpp
+        litellm_params:
+          model: openai/ggml-large-v3-turbo
+          api_base: http://whisper-cpp.litellm.svc.cluster.local:8081/v1
+          api_key: "sk-no-key-required"
+
       - model_name: gemini-3.8-flash
         litellm_params:
           model: gemini/gemini-3.8-flash
