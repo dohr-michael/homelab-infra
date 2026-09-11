@@ -6,6 +6,7 @@ namespace: litellm
 resources:
   - 00-namespace.yaml
   - 10-llama-cpp.yaml
+  - 10-whisper-cpp.yaml
   - 20-config.yaml
   - 30-deployment.yaml
   - 40-ingress.yaml
