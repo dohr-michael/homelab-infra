@@ -50,6 +50,7 @@ spec:
         - name: llama-server
           image: docker.io/kyuz0/amd-strix-halo-toolboxes:rocm-7.14
           imagePullPolicy: Always
+          command: ["llama-server"]
           args:
             - --model
             - $(MODEL_PATH)

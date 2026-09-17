@@ -7,7 +7,8 @@ resources:
   - 00-namespace.yaml
   - 01-storage.yaml
   - overlays/qwen35b-a3b
-  - overlays/bge-m3
+  # À activer après téléchargement de /home/michael/models/bge-m3-q4_k_m.gguf
+  # - overlays/bge-m3
   - 10-whisper-server.yaml
   # - 20-sd-server.yaml
   # - 30-open-webui.yaml
