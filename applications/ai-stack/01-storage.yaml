@@ -1,11 +1,6 @@
 ##############################################################################
-# Stockage persistant pour les modèles LLM
-# Les modèles GGUF sont stockés sur le noeud Strix Halo dans /srv/ai-models/llm
-#
-# (La partie diffusion a été retirée : sd-server/ComfyUI tourne désormais
-#  hors cluster, voir 20-sd-server.yaml — pattern headless.)
+# Modèles téléchargés manuellement sur gmk-ai-master.
 ##############################################################################
-
 ---
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
@@ -14,33 +9,26 @@ metadata:
 provisioner: kubernetes.io/no-provisioner
 volumeBindingMode: WaitForFirstConsumer
 reclaimPolicy: Retain
-
 ---
 apiVersion: v1
 kind: PersistentVolume
 metadata:
   name: ai-models-llm-pv
-  labels:
-    type: local
-    app: llama-server
 spec:
   capacity:
     storage: 200Gi
-  accessModes:
-    - ReadWriteOnce
+  accessModes: [ReadWriteOnce]
   persistentVolumeReclaimPolicy: Retain
   storageClassName: local-ai
   local:
-    path: /srv/ai-models/llm
+    path: /home/michael/models
   nodeAffinity:
     required:
       nodeSelectorTerms:
         - matchExpressions:
-            - key: gpu-type
+            - key: kubernetes.io/hostname
               operator: In
-              values:
-                - strix-halo
-
+              values: [gmk-ai-master]
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -48,12 +36,40 @@ metadata:
   name: ai-models-llm-pvc
   namespace: ai-stack
 spec:
-  accessModes:
-    - ReadWriteOnce
+  accessModes: [ReadWriteOnce]
   storageClassName: local-ai
   resources:
     requests:
       storage: 200Gi
-  selector:
-    matchLabels:
-      app: llama-server
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ai-models-whisper-pv
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-ai
+  local:
+    path: /home/michael/whisper.cpp/models
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: [gmk-ai-master]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ai-models-whisper-pvc
+  namespace: ai-stack
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-ai
+  resources:
+    requests:
+      storage: 20Gi

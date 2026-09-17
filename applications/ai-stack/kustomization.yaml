@@ -5,9 +5,10 @@ namespace: ai-stack
 
 resources:
   - 00-namespace.yaml
-  # - 01-storage.yaml
-  # - overlays/gemma4
-  # - overlays/bge-m3
+  - 01-storage.yaml
+  - overlays/qwen35b-a3b
+  - overlays/bge-m3
+  - 10-whisper-server.yaml
   # - 20-sd-server.yaml
   # - 30-open-webui.yaml
   # - 40-ingress.yaml

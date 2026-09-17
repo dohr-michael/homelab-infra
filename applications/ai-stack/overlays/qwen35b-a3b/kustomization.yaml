@@ -4,37 +4,40 @@ resources:
 labels:
   - includeSelectors: true
     pairs:
-      app: bge-m3
+      app: qwen35b-a3b
+      role: chat
 
-namePrefix: bge-m3-
+namePrefix: qwen35b-a3b-
 
-# Modèle d'embedding : active explicitement l'endpoint /v1/embeddings
 patches:
   - target:
       kind: Deployment
       name: llm-server
     patch: |-
-      - op: add
-        path: /spec/template/spec/containers/0/args/-
-        value: "--embeddings"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "8"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 48Gi
       - op: replace
         path: /spec/template/spec/initContainers/0/env
         value:
           - name: MODEL_PATH
-            value: /models/bge-m3-q4_k_m.gguf
+            value: /models/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q6_K.gguf
       - op: replace
         path: /spec/template/spec/containers/0/env
         value:
           - name: MODEL_PATH
-            value: /models/bge-m3-q4_k_m.gguf
+            value: /models/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q6_K.gguf
           - name: MODEL_ALIAS
-            value: bge-m3
+            value: qwen35b-a3b
           - name: CTX_SIZE
-            value: "8192"
+            value: "65536"
           - name: PARALLEL_SLOTS
-            value: "4"
+            value: "1"
           - name: THREADS
-            value: "4"
+            value: "8"
           - name: CACHE_TYPE_K
             value: q8_0
           - name: CACHE_TYPE_V

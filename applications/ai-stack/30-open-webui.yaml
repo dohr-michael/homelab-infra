@@ -51,7 +51,7 @@ spec:
           env:
             # ── Connexion au LLM (llama-server, API OpenAI-compatible) ──
             - name: OPENAI_API_BASE_URL
-              value: "http://gemma4-llm-server.ai-stack.svc.cluster.local:8080/v1"
+              value: "http://qwen35b-a3b-llm-server.ai-stack.svc.cluster.local:8080/v1"
             - name: OPENAI_API_KEY
               value: "sk-no-key-required"
 

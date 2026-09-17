@@ -1,8 +1,8 @@
 ##############################################################################
 # Modèles en GitOps (pas STORE_MODEL_IN_DB). Postgres = keys / spend / UI.
 #
-# llama-cpp : serveur llama.cpp (un seul modèle chargé à la fois), API
-# OpenAI-compatible sur /v1. Le nom du modèle n'est pas vérifié côté serveur.
+# llama.cpp et whisper.cpp tournent dans ai-stack sur gmk-ai-master. LiteLLM
+# ne dépend que de leurs Services internes Kubernetes.
 # Clés cloud : sops applications/litellm/litellm.secret.yaml
 ##############################################################################
 apiVersion: v1
@@ -20,7 +20,7 @@ data:
       - model_name: qwen-coder
         litellm_params:
           model: openai/local
-          api_base: http://llama-cpp.litellm.svc.cluster.local:8080/v1
+          api_base: http://qwen35b-a3b-llm-server.ai-stack.svc.cluster.local:8080/v1
           api_key: "sk-no-key-required"
           temperature: 0.1
           extra_body:
@@ -33,7 +33,7 @@ data:
       - model_name: qwen-reasoning
         litellm_params:
           model: openai/local
-          api_base: http://llama-cpp.litellm.svc.cluster.local:8080/v1
+          api_base: http://qwen35b-a3b-llm-server.ai-stack.svc.cluster.local:8080/v1
           api_key: "sk-no-key-required"
           temperature: 0.6
           extra_body:
@@ -44,20 +44,25 @@ data:
       - model_name: qwen-fast
         litellm_params:
           model: openai/local
-          api_base: http://llama-cpp.litellm.svc.cluster.local:8080/v1
+          api_base: http://qwen35b-a3b-llm-server.ai-stack.svc.cluster.local:8080/v1
           api_key: "sk-no-key-required"
           max_tokens: 1024
           extra_body:
             chat_template_kwargs:
               enable_thinking: false
 
+      - model_name: bge-m3
+        litellm_params:
+          model: openai/bge-m3
+          api_base: http://bge-m3-llm-server.ai-stack.svc.cluster.local:8080/v1
+          api_key: "sk-no-key-required"
 
-      # whisper.cpp server sur l'hôte GMK, exposé via Service/Endpoints
-      # (10-whisper-cpp.yaml) -> 100.64.0.4:8081.
+
+      # whisper.cpp dans ai-stack, exposé par Service Kubernetes.
       - model_name: whisper-cpp
         litellm_params:
           model: openai/ggml-large-v3-turbo
-          api_base: http://whisper-cpp.litellm.svc.cluster.local:8081/v1
+          api_base: http://whisper-server.ai-stack.svc.cluster.local:8080/v1
           api_key: "sk-no-key-required"
 
       - model_name: gemini-3.8-flash

@@ -1,28 +1,27 @@
 ##############################################################################
-# Base llama.cpp ROCm pour Strix Halo.
-# Chaque overlay fournit llm-server-config. Les modèles sont téléchargés et
-# administrés manuellement sur gmk-ai-master, jamais au démarrage des pods.
+# whisper.cpp ROCm sur Strix Halo. Le modèle reste géré sur l'hôte GMK.
 ##############################################################################
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: llm-server
+  name: whisper-server
   namespace: ai-stack
   labels:
-    app: llm-server
+    app: whisper-server
 spec:
   replicas: 1
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app: llm-server
+      app: whisper-server
   template:
     metadata:
       labels:
-        app: llm-server
+        app: whisper-server
     spec:
+      hostIPC: true
       tolerations:
         - key: dedicated
           operator: Equal
@@ -34,51 +33,31 @@ spec:
         - name: check-model
           image: busybox:1.37
           command: ["sh", "-c"]
-          args:
-            - |
-              test -f "$(MODEL_PATH)" || {
-                echo "Model not found: $(MODEL_PATH)"
-                find /models -maxdepth 3 -type f -print 2>/dev/null || true
-                exit 1
-              }
-          env: []
+          args: ["test -f /models/ggml-large-v3-turbo.bin"]
           volumeMounts:
             - name: models
               mountPath: /models
               readOnly: true
       containers:
-        - name: llama-server
-          image: docker.io/kyuz0/amd-strix-halo-toolboxes:rocm-7.14
+        - name: whisper-server
+          image: ghcr.io/dohr-michael/whisper-strix-halo-toolboxes:rocm-fedora43
           imagePullPolicy: Always
+          command: ["whisper-server"]
           args:
             - --model
-            - $(MODEL_PATH)
+            - /models/ggml-large-v3-turbo.bin
             - --host
             - 0.0.0.0
             - --port
             - "8080"
+            - --inference-path
+            - /v1/audio/transcriptions
             - --threads
-            - $(THREADS)
-            - --gpu-layers
-            - "999"
-            - --flash-attn
-            - "1"
-            - --ctx-size
-            - $(CTX_SIZE)
-            - --cache-type-k
-            - $(CACHE_TYPE_K)
-            - --cache-type-v
-            - $(CACHE_TYPE_V)
-            - --parallel
-            - $(PARALLEL_SLOTS)
-            - --no-mmap
-            - --fit
-            - "off"
-            - --alias
-            - $(MODEL_ALIAS)
-            - --metrics
-            - --no-ui
-          env: []
+            - "4"
+            - --print-progress
+            - --convert
+            - --language
+            - auto
           ports:
             - name: http
               containerPort: 8080
@@ -86,7 +65,7 @@ spec:
             tcpSocket:
               port: http
             periodSeconds: 10
-            failureThreshold: 60
+            failureThreshold: 30
           readinessProbe:
             tcpSocket:
               port: http
@@ -121,21 +100,18 @@ spec:
             type: CharDevice
         - name: models
           persistentVolumeClaim:
-            claimName: ai-models-llm-pvc
+            claimName: ai-models-whisper-pvc
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: llm-server
+  name: whisper-server
   namespace: ai-stack
-  labels:
-    app: llm-server
 spec:
   type: ClusterIP
   selector:
-    app: llm-server
+    app: whisper-server
   ports:
     - name: http
       port: 8080
       targetPort: http
-      protocol: TCP

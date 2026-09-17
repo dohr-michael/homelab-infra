@@ -40,7 +40,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: gemma4-llm-server
+                name: qwen35b-a3b-llm-server
                 port:
                   number: 8080
     - host: llm-api-code.home.dohrm.fr
@@ -50,7 +50,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: gemma4-llm-server
+                name: qwen35b-a3b-llm-server
                 port:
                   number: 8080
 
@@ -76,7 +76,7 @@ spec:
               service:
                 name: whisper-server
                 port:
-                  number: 9000
+                  number: 8080
 
     # ── ComfyUI (Image Gen) ────────────────────────────────
     - host: sd-api.home.dohrm.fr
