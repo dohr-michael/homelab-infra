@@ -10,5 +10,13 @@ resources:
   - 30-deployment.yaml
   - 40-ingress.yaml
 
+configMapGenerator:
+  - name: voice-backend
+    files:
+      - voice-pipeline/server.py
+  - name: voice-ui
+    files:
+      - voice-pipeline/ui/index.html
+
 generators:
   - ksops-generator.yaml

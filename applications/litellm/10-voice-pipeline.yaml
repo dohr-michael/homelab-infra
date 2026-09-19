@@ -1,7 +1,85 @@
 ##############################################################################
-# Prototype Realtime sur l'hôte Strix Halo, hors k3s.
-# Le serveur Podman écoute sur 100.64.0.4:8082.
+# Orchestrateur Realtime CPU dans k3s, sur le nœud du TTS Podman.
+# Le TTS reste hors k3s ; son port publié est sur l'adresse LAN de l'hôte.
 ##############################################################################
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-pipeline
+  namespace: litellm
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: voice-pipeline
+  template:
+    metadata:
+      labels:
+        app: voice-pipeline
+    spec:
+      nodeSelector:
+        gpu-type: strix-halo
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: ai
+          effect: NoSchedule
+      containers:
+        - name: voice-pipeline
+          # La même image Python déjà utilisée par LiteLLM fournit FastAPI,
+          # httpx et uvicorn. Le Containerfile du projet permet une image dédiée.
+          image: ghcr.io/berriai/litellm-database:v1.98.0
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "uvicorn"]
+          args: ["server:app", "--host", "0.0.0.0", "--port", "8082"]
+          workingDir: /app/voice
+          ports:
+            - name: http
+              containerPort: 8082
+          env:
+            - name: WHISPER_URL
+              value: http://whisper-server.ai-stack.svc.cluster.local:8080/v1
+            - name: LLM_URL
+              value: http://qwen35b-a3b-llm-server.ai-stack.svc.cluster.local:8080/v1
+            - name: TTS_URL
+              value: http://192.168.18.52:8080/v1
+            - name: LLM_MODEL
+              value: qwen35b-a3b
+            - name: TTS_VOICE
+              value: Ryan
+          volumeMounts:
+            - name: backend
+              mountPath: /app/voice
+              readOnly: true
+            - name: ui
+              mountPath: /app/voice/ui
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: backend
+          configMap:
+            name: voice-backend
+        - name: ui
+          configMap:
+            name: voice-ui
 ---
 apiVersion: v1
 kind: Service
@@ -10,21 +88,10 @@ metadata:
   namespace: litellm
 spec:
   type: ClusterIP
+  selector:
+    app: voice-pipeline
   ports:
     - name: http
       port: 8082
-      targetPort: 8082
+      targetPort: http
       protocol: TCP
----
-apiVersion: v1
-kind: Endpoints
-metadata:
-  name: voice-pipeline
-  namespace: litellm
-subsets:
-  - addresses:
-      - ip: 100.64.0.4
-    ports:
-      - name: http
-        port: 8082
-        protocol: TCP

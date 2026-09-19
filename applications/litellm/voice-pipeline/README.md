@@ -16,6 +16,6 @@ podman run -d --replace --name voice-pipeline --restart=always \
 curl http://127.0.0.1:8082/health
 ```
 
-Les adresses Whisper et Qwen doivent être accessibles depuis l'hôte. Des IP de pod conviennent au test, mais changent au redémarrage des pods. Le Service GitOps `voice-pipeline` expose ce conteneur à LiteLLM sur `100.64.0.4:8082`. L'alias LiteLLM `local-voice` cible son WebSocket via `litellm_params.api_base`. L'interface est ensuite disponible sur `https://llm-api.home.dohrm.fr/voice`.
+Les adresses Whisper et Qwen doivent être accessibles depuis l'hôte. Des IP de pod conviennent au test, mais changent au redémarrage des pods. Le déploiement GitOps utilise les Services Kubernetes pour Whisper et Qwen ; l'orchestrateur tourne sur le nœud Strix Halo et atteint le TTS Podman sur `192.168.18.52:8080`. Il utilise temporairement l'image Python de LiteLLM avec le code monté depuis des ConfigMaps. Le `Containerfile` fournit une image dédiée pour la suite. L'alias LiteLLM `local-voice` cible le Service Kubernetes via `litellm_params.api_base`. L'interface est disponible sur `https://llm-api.home.dohrm.fr/voice`.
 
 La clé LiteLLM doit autoriser le modèle `local-voice`. Le navigateur la transmet dans le sous-protocole WebSocket, sans l'inscrire dans le dépôt ou le stockage du navigateur. L'interface n'implémente que les événements Realtime nécessaires à cette chaîne, et n'offre pas le protocole WebRTC ni les appels d'outils.
