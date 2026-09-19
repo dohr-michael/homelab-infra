@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conversation vocale locale</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; color: #ecf5ef; background: radial-gradient(circle at 80% 0, #244b42, transparent 40%), #101a19; }
+    main { width: min(760px, calc(100% - 32px)); margin: 0 auto; padding: 36px 0 64px; }
+    .eyebrow { color: #addbbb; text-transform: uppercase; letter-spacing: .16em; font-size: 12px; font-weight: 700; }
+    h1 { font-size: clamp(30px, 6vw, 46px); line-height: 1.1; margin: 9px 0; }
+    .intro, .note { color: #a4b9ae; line-height: 1.5; }
+    .panel { margin-top: 24px; padding: 24px; border: 1px solid #3d574d; border-radius: 18px; background: #1b2b28; }
+    .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    button { border: 0; border-radius: 10px; padding: 12px 18px; font: inherit; font-weight: 700; cursor: pointer; background: #b5e1bd; color: #102018; }
+    button.secondary { color: #e3eee6; background: #365047; }
+    button:disabled { opacity: .5; cursor: default; }
+    #status { margin-top: 16px; min-height: 24px; color: #bde6c5; }
+    .meter { width: 100%; height: 7px; overflow: hidden; border-radius: 99px; margin-top: 16px; background: #30453d; }
+    #level { width: 0; height: 100%; background: #9fdbab; transition: width .08s; }
+    .setting { margin-top: 18px; display: flex; align-items: center; gap: 15px; font-size: 13px; color: #b7cabd; }
+    .setting input { flex: 1; accent-color: #a8dcb4; }
+    .key { display: block; margin: 0 0 18px; color: #b7cabd; font-size: 13px; }
+    .key input { display: block; width: 100%; margin-top: 7px; padding: 11px; border: 1px solid #5a7267; border-radius: 8px; color: white; background: #10201b; }
+    .dialog { display: grid; gap: 12px; }
+    .message { padding: 14px 16px; border-radius: 12px; line-height: 1.5; white-space: pre-wrap; }
+    .user { background: #29463b; }
+    .assistant { background: #263541; }
+    .role { color: #a8cdb4; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; margin-bottom: 5px; }
+    .empty { color: #96a99e; }
+    .error { color: #ffb9b0 !important; }
+    .note { font-size: 12px; margin-top: 19px; }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Whisper · Qwen 3.6 · Qwen TTS</p>
+    <h1>Conversation vocale</h1>
+    <p class="intro">Lance le micro, parle naturellement, puis laisse une courte pause. Tu peux interrompre la réponse en reparlant.</p>
+    <section class="panel" aria-label="Microphone">
+      <label class="key">Clé LiteLLM <input id="api-key" type="password" autocomplete="off" placeholder="sk-…"></label>
+      <div class="controls">
+        <button id="start">Démarrer le micro</button>
+        <button id="stop" class="secondary" disabled>Arrêter</button>
+        <button id="reset" class="secondary" disabled>Nouvelle conversation</button>
+      </div>
+      <div class="meter" aria-hidden="true"><div id="level"></div></div>
+      <div id="status" role="status" aria-live="polite">Prêt.</div>
+      <label class="setting">Sensibilité du micro <input id="threshold" type="range" min="0.005" max="0.06" step="0.001" value="0.018"><span id="threshold-value">0,018</span></label>
+    </section>
+    <section class="panel" aria-label="Conversation">
+      <div id="dialog" class="dialog"><div class="empty" id="empty">La conversation apparaîtra ici.</div></div>
+    </section>
+    <p class="note">HTTPS est nécessaire pour le microphone. La clé reste uniquement dans cette page. La détection de parole utilise le niveau sonore local ; ajuste le curseur si nécessaire.</p>
+  </main>
+  <script>
+    const $ = id => document.getElementById(id);
+    const start = $('start'), stop = $('stop'), reset = $('reset'), status = $('status');
+    const dialog = $('dialog'), threshold = $('threshold');
+    let socket, context, stream, source, processor, nextAudioTime = 0;
+    let speaking = false, preRoll = [], captured = [], voiceSeconds = 0, silenceSeconds = 0, aboveSeconds = 0;
+    let activeResponse = null, playbackEpoch = 0, playbackChain = Promise.resolve();
+    const playbackSources = new Set();
+
+    function setStatus(message, error = false) {
+      status.textContent = message;
+      status.classList.toggle('error', error);
+    }
+
+    function addMessage(role, text) {
+      $('empty')?.remove();
+      const item = document.createElement('div');
+      item.className = `message ${role}`;
+      const label = document.createElement('div');
+      label.className = 'role';
+      label.textContent = role === 'user' ? 'Toi' : 'Assistant';
+      const content = document.createElement('div');
+      content.textContent = text;
+      item.append(label, content);
+      dialog.append(item);
+      item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      return content;
+    }
+
+    let assistantText = null;
+    function stopPlayback() {
+      playbackEpoch++;
+      for (const item of playbackSources) { try { item.stop(); } catch (_) {} }
+      playbackSources.clear();
+      nextAudioTime = 0;
+      playbackChain = Promise.resolve();
+    }
+
+    function pcm16(chunks, sampleRate) {
+      const count = chunks.reduce((sum, item) => sum + item.length, 0);
+      const input = new Float32Array(count);
+      let offset = 0;
+      for (const item of chunks) { input.set(item, offset); offset += item.length; }
+      const outputCount = Math.round(count * 24000 / sampleRate);
+      const bytes = new ArrayBuffer(outputCount * 2);
+      const view = new DataView(bytes);
+      for (let i = 0; i < outputCount; i++) {
+        const position = i * sampleRate / 24000;
+        const left = Math.floor(position), mix = position - left;
+        const sample = (input[left] || 0) * (1 - mix) + (input[left + 1] || 0) * mix;
+        view.setInt16(i * 2, Math.round(Math.max(-1, Math.min(1, sample)) * 32767), true);
+      }
+      return bytes;
+    }
+
+    function toBase64(bytes) {
+      let value = '';
+      const view = new Uint8Array(bytes);
+      for (let offset = 0; offset < view.length; offset += 16384) {
+        value += String.fromCharCode(...view.subarray(offset, offset + 16384));
+      }
+      return btoa(value);
+    }
+
+    function onSamples(samples) {
+      const duration = samples.length / context.sampleRate;
+      const rms = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
+      $('level').style.width = `${Math.min(100, rms * 1200)}%`;
+      const isVoice = rms > Number(threshold.value);
+      preRoll.push(samples);
+      if (preRoll.length > 8) preRoll.shift();
+      if (!speaking) {
+        aboveSeconds = isVoice ? aboveSeconds + duration : 0;
+        if (aboveSeconds < 0.10) return;
+        speaking = true;
+        captured = preRoll.slice();
+        voiceSeconds = aboveSeconds;
+        silenceSeconds = 0;
+        activeResponse = null;
+        assistantText = null;
+        stopPlayback();
+        socket.send(JSON.stringify({ type: 'response.cancel' }));
+        socket.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
+        setStatus('Je t’écoute…');
+        return;
+      }
+      captured.push(samples);
+      if (isVoice) { voiceSeconds += duration; silenceSeconds = 0; }
+      else silenceSeconds += duration;
+      if (silenceSeconds >= 0.65 || captured.length * duration >= 20) {
+        speaking = false;
+        aboveSeconds = 0;
+        if (voiceSeconds >= 0.18 && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: toBase64(pcm16(captured, context.sampleRate)) }));
+          socket.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+          socket.send(JSON.stringify({ type: 'response.create' }));
+          setStatus('Transcription…');
+        } else setStatus('Écoute active.');
+        captured = [];
+      }
+    }
+
+    function decodeBase64(value) {
+      const data = atob(value);
+      const bytes = new Uint8Array(data.length);
+      for (let i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i);
+      return bytes.buffer;
+    }
+
+    function scheduleAudio(event) {
+      const epoch = playbackEpoch;
+      playbackChain = playbackChain.then(async () => {
+        const bytes = decodeBase64(event.delta);
+        const view = new DataView(bytes);
+        const audio = context.createBuffer(1, bytes.byteLength / 2, 24000);
+        const samples = audio.getChannelData(0);
+        for (let i = 0; i < samples.length; i++) samples[i] = view.getInt16(i * 2, true) / 32768;
+        if (epoch !== playbackEpoch || event.response_id !== activeResponse) return;
+        const node = context.createBufferSource();
+        node.buffer = audio;
+        node.connect(context.destination);
+        const when = Math.max(context.currentTime + 0.03, nextAudioTime);
+        node.start(when);
+        nextAudioTime = when + audio.duration;
+        playbackSources.add(node);
+        node.onended = () => playbackSources.delete(node);
+        setStatus('L’assistant parle. Tu peux l’interrompre.');
+      }).catch(error => setStatus(`Lecture audio : ${error.message}`, true));
+    }
+
+    function handleEvent(event) {
+      if (event.type === 'session.created') { setStatus('Écoute active.'); return; }
+      if (event.type === 'response.created') { activeResponse = event.response.id; return; }
+      if (event.type === 'conversation.item.input_audio_transcription.completed') {
+        addMessage('user', event.transcript); assistantText = addMessage('assistant', '');
+        setStatus('Réponse…'); return;
+      }
+      if (event.response_id && event.response_id !== activeResponse) return;
+      if (event.type === 'response.output_text.delta' && assistantText) assistantText.textContent += event.delta;
+      if (event.type === 'response.output_audio.delta') scheduleAudio(event);
+      if (event.type === 'response.done' && event.response.id === activeResponse) setStatus('Écoute active.');
+      if (event.type === 'error') setStatus(event.error?.message || 'Erreur du serveur.', true);
+    }
+
+    start.addEventListener('click', async () => {
+      const key = $('api-key').value.trim();
+      if (!key) { setStatus('Saisis une clé LiteLLM.', true); return; }
+      if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+        setStatus('Le microphone exige HTTPS ou localhost.', true); return;
+      }
+      try {
+        context = new AudioContext();
+        await context.resume();
+        const module = `class Capture extends AudioWorkletProcessor {
+          constructor() { super(); this.buffer = new Float32Array(2048); this.offset = 0; }
+          process(inputs, outputs) {
+            const input = inputs[0]?.[0];
+            if (input) for (const value of input) {
+              this.buffer[this.offset++] = value;
+              if (this.offset === this.buffer.length) {
+                this.port.postMessage(this.buffer, [this.buffer.buffer]);
+                this.buffer = new Float32Array(2048); this.offset = 0;
+              }
+            }
+            outputs[0]?.[0]?.fill(0);
+            return true;
+          }
+        } registerProcessor('capture', Capture);`;
+        const url = URL.createObjectURL(new Blob([module], { type: 'application/javascript' }));
+        await context.audioWorklet.addModule(url);
+        URL.revokeObjectURL(url);
+        stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+        source = context.createMediaStreamSource(stream);
+        processor = new AudioWorkletNode(context, 'capture');
+        processor.port.onmessage = message => { if (socket?.readyState === WebSocket.OPEN) onSamples(new Float32Array(message.data)); };
+        source.connect(processor).connect(context.destination);
+        const urlWs = new URL('/v1/realtime', location.origin);
+        urlWs.searchParams.set('model', 'local-voice');
+        urlWs.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        socket = new WebSocket(urlWs, ['realtime', `openai-insecure-api-key.${key}`]);
+        socket.onmessage = message => handleEvent(JSON.parse(message.data));
+        socket.onclose = () => setStatus('Connexion fermée.', true);
+        socket.onerror = () => setStatus('Connexion WebSocket impossible.', true);
+        start.disabled = true; stop.disabled = false; reset.disabled = false;
+        setStatus('Connexion…');
+      } catch (error) {
+        setStatus(`Microphone : ${error.message}`, true);
+        stream?.getTracks().forEach(track => track.stop());
+        await context?.close();
+      }
+    });
+
+    stop.addEventListener('click', async () => {
+      stopPlayback(); socket?.close(); stream?.getTracks().forEach(track => track.stop());
+      await context?.close(); speaking = false; preRoll = []; captured = [];
+      start.disabled = false; stop.disabled = true; reset.disabled = true;
+      $('level').style.width = '0'; setStatus('Microphone arrêté.');
+    });
+    reset.addEventListener('click', () => {
+      stopPlayback(); socket?.close(); stream?.getTracks().forEach(track => track.stop());
+      context?.close(); speaking = false; preRoll = []; captured = [];
+      start.disabled = false; stop.disabled = true; reset.disabled = true;
+      dialog.replaceChildren(); setStatus('Nouvelle conversation prête. Redémarre le micro.');
+    });
+    threshold.addEventListener('input', () => { $('threshold-value').textContent = Number(threshold.value).toFixed(3).replace('.', ','); });
+  </script>
+</body>
+</html>

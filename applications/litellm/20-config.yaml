@@ -65,6 +65,15 @@ data:
           api_base: http://whisper-server.ai-stack.svc.cluster.local:8080/v1
           api_key: "sk-no-key-required"
 
+      # WebSocket Realtime local : Whisper → Qwen 3.6 → Qwen3-TTS.
+      - model_name: local-voice
+        litellm_params:
+          model: openai/local-voice
+          api_base: http://voice-pipeline.litellm.svc.cluster.local:8082/v1
+          api_key: "sk-no-key-required"
+        model_info:
+          mode: realtime
+
       - model_name: gemini-3.8-flash
         litellm_params:
           model: gemini/gemini-3.8-flash

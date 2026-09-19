@@ -19,6 +19,8 @@ spec:
     metadata:
       labels:
         app: litellm
+      annotations:
+        voice-config-revision: "1"
     spec:
       # Pas de taint GPU, pas de CriticalAddonsOnly → VPS a7c3e9b8 ou 4541d883.
       priorityClassName: homelab-platform
