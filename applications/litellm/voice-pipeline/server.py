@@ -243,6 +243,10 @@ async def realtime(websocket: WebSocket):
                 await session.send('input_audio_buffer.committed', item_id=session.item_id)
             elif kind == 'response.create':
                 if session.committed is None or session.item_id is None:
+                    # Some Realtime gateways repeat response.create immediately
+                    # after commit. The active response already handles this audio.
+                    if session.task and not session.task.done():
+                        continue
                     await session.error('Aucun audio validé')
                     continue
                 await session.cancel()
