@@ -9,11 +9,22 @@ labels:
 
 namePrefix: qwen35b-a3b-
 
+# Modèle multimodal (texte + image + vidéo) : `--mmproj` est obligatoire, le
+# projecteur n'est auto-chargé que via `-hf`, jamais avec un `--model` local.
+# À télécharger une fois sur gmk-ai-master (~858 Mio) :
+#   huggingface-cli download unsloth/Qwen3.6-35B-A3B-GGUF mmproj-F16.gguf \
+#     --local-dir /srv/ai-models/llm/Qwen3.6-35B-A3B-GGUF
 patches:
   - target:
       kind: Deployment
       name: llm-server
     patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--mmproj"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: $(MMPROJ_PATH)
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/cpu
         value: "8"
@@ -21,15 +32,30 @@ patches:
         path: /spec/template/spec/containers/0/resources/requests/memory
         value: 48Gi
       - op: replace
+        path: /spec/template/spec/initContainers/0/args
+        value:
+          - |
+            for f in "$(MODEL_PATH)" "$(MMPROJ_PATH)"; do
+              test -f "$f" || {
+                echo "File not found: $f"
+                find /models -maxdepth 3 -type f -print 2>/dev/null || true
+                exit 1
+              }
+            done
+      - op: replace
         path: /spec/template/spec/initContainers/0/env
         value:
           - name: MODEL_PATH
             value: /models/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q6_K.gguf
+          - name: MMPROJ_PATH
+            value: /models/Qwen3.6-35B-A3B-GGUF/mmproj-F16.gguf
       - op: replace
         path: /spec/template/spec/containers/0/env
         value:
           - name: MODEL_PATH
             value: /models/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q6_K.gguf
+          - name: MMPROJ_PATH
+            value: /models/Qwen3.6-35B-A3B-GGUF/mmproj-F16.gguf
           - name: MODEL_ALIAS
             value: qwen35b-a3b
           - name: CTX_SIZE

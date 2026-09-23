@@ -16,6 +16,16 @@ data:
       drop_params: true
 
     model_list:
+      ########################################################################
+      # Qwen3.6-35B-A3B — multimodal (texte + image + vidéo).
+      # `supports_vision: true` est le seul flag de capacité que litellm
+      # expose ; il n'y a pas d'équivalent pour la vidéo, les content parts
+      # vidéo passent en direct vers llama-server.
+      # ⚠ Côté serveur, llama-server doit être lancé avec `--mmproj` (le
+      # projecteur multimodal du repo GGUF) sinon toute requête image/vidéo
+      # part en 400 — voir overlays/qwen35b-a3b.
+      ########################################################################
+
       # 1. Pour tes agents de code (rapide, direct, sans monologue)
       - model_name: qwen-coder
         litellm_params:
@@ -26,6 +36,8 @@ data:
           extra_body:
             chat_template_kwargs:
               enable_thinking: false
+        model_info:
+          supports_vision: true
 
       # 2. Pour l'analyse complexe / maths / architecture (réflexion profonde)
       #    Plafonner le thinking = `--reasoning-budget N` au lancement du
@@ -39,6 +51,8 @@ data:
           extra_body:
             chat_template_kwargs:
               enable_thinking: true
+        model_info:
+          supports_vision: true
 
       # 3. Mode économique / rapide
       - model_name: qwen-fast
@@ -50,6 +64,8 @@ data:
           extra_body:
             chat_template_kwargs:
               enable_thinking: false
+        model_info:
+          supports_vision: true
 
       - model_name: bge-m3
         litellm_params:
