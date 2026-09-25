@@ -5,6 +5,14 @@
 # K8s route le trafic sans gérer de pod (même pattern que sd-server/ComfyUI).
 #
 # Port sur le nœud : 18789
+#
+# ⚠️ NE PAS migrer vers EndpointSlice. `v1 Endpoints` est déprécié depuis 1.33,
+#   mais ArgoCD exclut `discovery.k8s.io/EndpointSlice` dans son
+#   `resource.exclusions` par défaut (trop de churn côté control-plane) : une
+#   EndpointSlice déclarée ici ne serait jamais appliquée
+#   (ExcludedResourceWarning). Le mirroring controller de K8s génère de toute
+#   façon la slice à partir de cet Endpoints, donc kube-proxy en consomme bien
+#   une. Vérifié le 2026-09-25.
 ##############################################################################
 
 ---

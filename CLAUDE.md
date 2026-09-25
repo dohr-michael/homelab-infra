@@ -19,7 +19,7 @@ Cluster K3S (k3s `v1.34.3`) — 4 nœuds enregistrés :
 
 MongoDB prod : replica set sur les 3 VPS (`role.homelab/mongodb-prod`). PostgreSQL prod : CloudNativePG 1.30, 1 instance (`role.homelab/postgres-prod`, aujourd’hui `vps-4541d883`). Labels de nœuds : `infra/label-nodes.sh`.
 
-- **GMK / LLM** : Ollama tourne **sur l’hôte**, pas comme Deployment K3S. Exposé hors cluster (VPN). **Inaccessible depuis les pods** — pas de Service cluster pour l’instant. Suite prévue : `Service` + `Endpoints` (ou ExternalName) vers l’URL Ollama, même pattern que whisper / ComfyUI.
+- **GMK / LLM** : Ollama tourne **sur l’hôte**, pas comme Deployment K3S. Exposé hors cluster (VPN). **Inaccessible depuis les pods** — pas de Service cluster pour l’instant. Suite prévue : `Service` + `Endpoints` (ou ExternalName) vers l’URL Ollama, même pattern que whisper / ComfyUI. Rester sur `Endpoints` : ArgoCD exclut `EndpointSlice` par défaut (voir `applications/ozzie/10-service.yaml`).
 - **Image gen** : ComfyUI sur l’hôte GMK, pattern `Service` + `Endpoints` → `100.64.0.4:8000` (`20-sd-server.yaml`). Idem, commenté / non déployé.
 - **ArgoCD** (`argocd/`) : GitOps, `kubectl apply -k argocd/`. Version pinée `v3.3.0`.
 - **ApplicationSet** : auto-découvre `applications/*/` et déploie.
