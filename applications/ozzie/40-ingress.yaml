@@ -1,0 +1,24 @@
+##############################################################################
+# ozzie.home.dohrm.fr — record ajouté dans le DNS Headscale
+# (applications/headscale/10-dns-sync.yaml), sinon NXDOMAIN côté VPN.
+##############################################################################
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ozzie
+  namespace: ozzie
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: ozzie.home.dohrm.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ozzie
+                port:
+                  number: 18789

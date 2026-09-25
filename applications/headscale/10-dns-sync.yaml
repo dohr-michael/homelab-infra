@@ -45,6 +45,7 @@ data:
       { "name": "vpn.home.dohrm.fr",           "type": "A", "value": "100.64.0.1" },
       { "name": "argo.home.dohrm.fr",          "type": "A", "value": "100.64.0.1" },
       { "name": "n8n.home.dohrm.fr",           "type": "A", "value": "100.64.0.1" },
+      { "name": "ozzie.home.dohrm.fr",         "type": "A", "value": "100.64.0.1" },
 
       { "name": "grafana.home.dohrm.fr",       "type": "A", "value": "100.64.0.1" },
       { "name": "alertmanager.home.dohrm.fr",  "type": "A", "value": "100.64.0.1" },
