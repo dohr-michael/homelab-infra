@@ -1,0 +1,72 @@
+resources:
+  - ../../base
+
+labels:
+  - includeSelectors: true
+    pairs:
+      app: qwen3-embedding-4b
+      role: embedding
+
+namePrefix: qwen3-embedding-4b-
+
+# Modèle d'embedding Qwen3 (2560 dims, MRL 32→2560, contexte 32k).
+# À télécharger une fois sur gmk-ai-master (~4,3 Gio) :
+#   huggingface-cli download Qwen/Qwen3-Embedding-4B-GGUF \
+#     Qwen3-Embedding-4B-Q8_0.gguf \
+#     --local-dir /home/michael/models/Qwen3-Embedding-4B-GGUF
+#
+# Trois flags non négociables (cf. README du repo GGUF) :
+#   --embeddings   expose /v1/embeddings
+#   --pooling last pooling sur le dernier token ; sans lui les vecteurs
+#                  sont silencieusement faux (moyenne au lieu du last token)
+#   -ub 8192       llama.cpp exige ubatch >= taille du prompt en mode
+#                  pooling ; avec le défaut (512) tout prompt plus long
+#                  part en erreur. ctx 32768 / 4 slots = 8192 par slot.
+patches:
+  - target:
+      kind: Deployment
+      name: llm-server
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--embeddings"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--pooling"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "last"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--ubatch-size"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "8192"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--batch-size"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "8192"
+      - op: replace
+        path: /spec/template/spec/initContainers/0/env
+        value:
+          - name: MODEL_PATH
+            value: /models/Qwen3-Embedding-4B-GGUF/Qwen3-Embedding-4B-Q8_0.gguf
+      - op: replace
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: MODEL_PATH
+            value: /models/Qwen3-Embedding-4B-GGUF/Qwen3-Embedding-4B-Q8_0.gguf
+          - name: MODEL_ALIAS
+            value: qwen3-embedding-4b
+          - name: CTX_SIZE
+            value: "32768"
+          - name: PARALLEL_SLOTS
+            value: "4"
+          - name: THREADS
+            value: "4"
+          - name: CACHE_TYPE_K
+            value: f16
+          - name: CACHE_TYPE_V
+            value: f16

@@ -80,12 +80,12 @@ KUBECONFIG=~/.kube/home.dohrm kubectl ...
 Ancien chemin in-cluster (llama-server ROCm, **plus utilisé**) — conservé dans le repo, dormant :
 
 - `applications/ai-stack/base/llm.yaml` : template Deployment/Service
-- Overlays : `overlays/gemma4` (Gemma 4 26B), `overlays/bge-m3` (embeddings)
+- Overlays : `overlays/gemma4` (Gemma 4 26B), `overlays/qwen3-embedding-4b` (embeddings, Qwen3-Embedding-4B Q8_0)
 - Pour réactiver un overlay : le décommenter sous `resources:` (et le reste de la stack si besoin)
 
 Chemin actuel : **Ollama sur `gmk-ai-master`**, hors cluster. Les pods ne peuvent pas l’appeler. Brancher plus tard un Service cluster sur l’URL Ollama.
 
-Open WebUI (`30-open-webui.yaml`, non déployé) pointait encore vers `gemma4-llm-server` / `bge-m3-llm-server` in-cluster, avec `OLLAMA_BASE_URL` vide.
+Open WebUI (`30-open-webui.yaml`, non déployé) pointait encore vers `gemma4-llm-server` / `qwen3-embedding-4b-llm-server` in-cluster, avec `OLLAMA_BASE_URL` vide.
 
 ## Strix Halo — matériel GPU
 
