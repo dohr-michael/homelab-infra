@@ -19,15 +19,20 @@ spec:
       protocol: TCP
 
 ---
-apiVersion: v1
-kind: Endpoints
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
 metadata:
-  name: llama-cpp
+  name: llama-cpp-static
   namespace: litellm
-subsets:
+  labels:
+    kubernetes.io/service-name: llama-cpp
+addressType: IPv4
+endpoints:
   - addresses:
-      - ip: 100.64.0.4
-    ports:
-      - name: http
-        port: 8080
-        protocol: TCP
+      - 100.64.0.4   # gmk-ai-master (IP Headscale)
+    conditions:
+      ready: true
+ports:
+  - name: http
+    port: 8080
+    protocol: TCP
