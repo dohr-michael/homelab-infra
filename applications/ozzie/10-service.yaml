@@ -1,5 +1,5 @@
 ##############################################################################
-# OpenClaw — exposé via Service + EndpointSlice (pattern headless)
+# OpenClaw — exposé via Service + Endpoints (pattern headless)
 #
 # OpenClaw tourne directement sur l'hôte gmk-ai-master, hors cluster.
 # K8s route le trafic sans gérer de pod (même pattern que sd-server/ComfyUI).
@@ -24,20 +24,17 @@ spec:
       protocol: TCP
 
 ---
-apiVersion: discovery.k8s.io/v1
-kind: EndpointSlice
+apiVersion: v1
+kind: Endpoints
 metadata:
-  name: ozzie-static
+  name: ozzie
   namespace: ozzie
   labels:
-    kubernetes.io/service-name: ozzie
-addressType: IPv4
-endpoints:
+    app: ozzie
+subsets:
   - addresses:
-      - 100.64.0.4   # gmk-ai-master (IP Headscale)
-    conditions:
-      ready: true
-ports:
-  - name: http
-    port: 18789
-    protocol: TCP
+      - ip: 100.64.0.4   # gmk-ai-master (IP Headscale)
+    ports:
+      - name: http
+        port: 18789
+        protocol: TCP
