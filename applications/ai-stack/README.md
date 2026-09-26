@@ -10,13 +10,17 @@ Backend **ROCm**, pas Vulkan : image `docker.io/kyuz0/amd-strix-halo-toolboxes:r
 | `qwen35b-a3b-llm-server` | Qwen3.6-35B-A3B UD-Q6_K + `mmproj-F16` | chat multimodal |
 | `qwen3-embedding-4b-llm-server` | Qwen3-Embedding-4B Q8_0 | embeddings, 2560 dims |
 | `whisper-server` | `ggml-large-v3-turbo` | transcription |
+| `qwen3-5-9b-decision-llm-server` | Qwen3.5-9B Q8_0 | décision / classification |
 
 Aucun de ces services n'est exposé hors cluster. L'entrée publique est **LiteLLM**
 (`applications/litellm/`), qui les agrège derrière `https://llm-api.home.dohrm.fr`.
 
 Non déployés, conservés commentés dans `kustomization.yaml` : `20-sd-server.yaml`
 (la génération d'images est passée sur ComfyUI **hôte**), `30-open-webui.yaml`,
-`40-ingress.yaml`, et l'overlay de repli `overlays/qwen3.5-9b-decision`.
+`40-ingress.yaml`.
+
+Le service de décision se consomme **en direct sur son Service**, pas via LiteLLM :
+`drop_params: true` y élaguerait `n_probs` et `post_sampling_probs`, dont il dépend.
 
 ## Structure
 
@@ -58,7 +62,8 @@ additionnait VRAM et GTT, alors que les deux sont pris sur la même RAM physique
 | VRAM dédiée | 1 Gio |
 | `requests` K8s / allouable | 67 / 92,9 Gio |
 
-Poids résidents : 27,3 Gio (35B-A3B Q6_K) + 0,86 (mmproj) + 4,0 (embedding) + whisper.
+Poids résidents : 27,3 Gio (35B-A3B Q6_K) + 0,86 (mmproj) + 4,0 (embedding)
++ 8,87 (Qwen3.5-9B Q8_0) + whisper.
 
 **La RAM est une contrainte dure.** Une seconde instance 35B-A3B ne rentre pas, et le
 scheduler la refuse avant même l'OOM. Chiffrer avant d'ajouter un modèle :

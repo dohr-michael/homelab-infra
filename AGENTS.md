@@ -82,18 +82,21 @@ Déployé (`applications/ai-stack/kustomization.yaml`) : namespace, storage, et 
 | `qwen35b-a3b-llm-server` | Qwen3.6-35B-A3B UD-Q6_K + mmproj | chat multimodal |
 | `qwen3-embedding-4b-llm-server` | Qwen3-Embedding-4B Q8_0 | embeddings (2560 dims) |
 | `whisper-server` | ggml-large-v3-turbo | transcription |
+| `qwen3-5-9b-decision-llm-server` | Qwen3.5-9B Q8_0 | décision / classification |
 
 `base/llm.yaml` est le template Deployment/Service ; chaque modèle est un overlay sous `overlays/` qui patche `env` et `args`. Consommateurs : `applications/litellm/20-config.yaml`.
 
-Commenté / non déployé : `20-sd-server.yaml` (ComfyUI hôte), `30-open-webui.yaml`, `40-ingress.yaml`, et l'overlay de repli `overlays/qwen3.5-9b-decision`.
+Commenté / non déployé : `20-sd-server.yaml` (ComfyUI hôte), `30-open-webui.yaml`, `40-ingress.yaml`.
 
-### Service de décision (chantier ouvert)
+### Service de décision
 
-Un module Python exposera une API de décision façon OpenRouter `/api/alpha/decisions`. Cible : **Open-Jev-9B** — LoRA + **tête scalaire** + température apprise sur Qwen3.5-9B, donc **inservable par llama.cpp** (rien de tout ça n'entre dans un GGUF) ; il lui faut son serveur PyTorch, à valider en ROCm sur gfx1151.
+Un module Python expose une API de décision façon OpenRouter `/api/alpha/decisions` (types `choice` / `noul` / `score`, probabilités calibrées).
 
-⚠ Ne **jamais** charger un GGUF estampillé « Jev » dans `base/llm.yaml` : c'est le backbone décapité de sa tête, il se charge sans erreur et renvoie des probabilités fausses, sans trace dans les logs.
+**En place :** `overlays/qwen3.5-9b-decision` — Qwen3.5-9B Q8_0 servi nu, décision extraite des **logprobs du premier token** sur un espace d'étiquettes mono-token. Le module attaque `/completion` **en direct sur le Service**, pas via LiteLLM : `drop_params: true` y élaguerait `n_probs` et `post_sampling_probs`. La route LiteLLM `qwen-decision` n'existe que pour les appels ad-hoc.
 
-Repli prêt et désactivé : `overlays/qwen3.5-9b-decision` (même backbone servi nu, décision par logprobs du premier token).
+**Cible :** **Open-Jev-9B** (ZefanCai) — LoRA + **tête scalaire** + température apprise sur ce même backbone. Rien de tout ça n'entre dans un GGUF : **llama.cpp ne peut pas le servir**, il lui faut son serveur PyTorch (`jev.server` / `vllm-jev`), à valider en ROCm sur gfx1151. Le service actuel est donc une étape, moins bien calibrée d'exactement ce qui lui manque.
+
+⚠ Ne **jamais** charger un GGUF estampillé « Jev » dans `base/llm.yaml` : c'est le backbone décapité de sa tête. Il se charge sans erreur et renvoie des probabilités fausses, sans laisser de trace dans les logs.
 
 ## Strix Halo — matériel GPU
 

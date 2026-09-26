@@ -10,19 +10,20 @@ labels:
 namePrefix: qwen3-5-9b-decision-
 
 ##############################################################################
-# REPLI. À n'activer que si Open-Jev-9B ne peut pas être servi sur gfx1151.
+# Backend du service de décision, en place aujourd'hui.
 #
-# Open-Jev-9B (ZefanCai) est un LoRA + une tête de décision scalaire greffés
-# sur Qwen3.5-9B, avec une température apprise. Ni la tête ni la température
-# ne sont représentables en GGUF : llama.cpp ne peut pas le servir, il lui
-# faut son propre serveur PyTorch (jev.server / vllm-jev).
-# Cet overlay est le plan B : le MÊME backbone, servi nu par llama-server,
-# avec extraction des probabilités par logprobs du premier token.
+# Qwen3.5-9B servi nu par llama-server : le module extrait la décision des
+# logprobs du premier token, sur un espace d'étiquettes mono-token, puis
+# renormalise sur les étiquettes autorisées.
 #
-# ⚠ Ce repli est strictement moins bon en calibration : on perd la tête
-# entraînée ET la température apprise. C'est l'approche « logprobs sur un
-# modèle généraliste », pas un modèle de décision. Ne pas l'activer par
-# confort si Open-Jev est encore jouable.
+# Statut : solution intermédiaire assumée. La cible reste Open-Jev-9B
+# (ZefanCai) — un LoRA + une tête de décision scalaire + une température
+# apprise sur CE MÊME backbone. Ni la tête ni la température n'entrent dans
+# un GGUF, donc llama.cpp ne peut pas le servir : il lui faut son serveur
+# PyTorch (jev.server / vllm-jev), à valider en ROCm sur gfx1151. Tant que
+# ce n'est pas fait, cet overlay tient le rôle — en sachant qu'il est
+# strictement moins bien calibré, puisqu'il lui manque exactement la tête
+# entraînée et la température qui font la valeur d'Open-Jev.
 #
 # ⚠⚠ NE JAMAIS charger ici un GGUF estampillé « Jev ». Plusieurs dépôts en
 # proposent ; un GGUF de ce modèle est par construction le backbone décapité
@@ -56,8 +57,9 @@ namePrefix: qwen3-5-9b-decision-
 # Budget mesuré sur gmk-ai-master (92,9 Gio, 17,2 disponibles) :
 #   8,9 poids + 2,0 KV + ~1 buffers ≈ 12 Gio. Passe sans rien libérer.
 #
-# À télécharger sur gmk-ai-master (~9,5 Go) — le PV monte /home/michael/models.
-# ⚠ Vérifier le nom exact du fichier dans le dépôt avant de lancer :
+# Modèle en place sur gmk-ai-master (8,87 Gio, vérifié le 2026-09-26) :
+#   /home/michael/models/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q8_0.gguf
+# Pour le retélécharger :
 #   huggingface-cli download unsloth/Qwen3.5-9B-GGUF Qwen3.5-9B-Q8_0.gguf \
 #     --local-dir /home/michael/models/Qwen3.5-9B-GGUF
 ##############################################################################
