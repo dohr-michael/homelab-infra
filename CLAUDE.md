@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Homelab infrastructure on K3S, managed via ArgoCD GitOps. Inférence LLM actuelle : **Ollama sur l’hôte GMK** (AMD Strix Halo gfx1151), hors workloads Kubernetes.
+Homelab infrastructure on K3S, managed via ArgoCD GitOps. Inférence LLM actuelle : **llama.cpp ROCm in-cluster** sur `gmk-ai-master` (AMD Strix Halo gfx1151), exposée par LiteLLM.
 
 ## Architecture
 
@@ -19,7 +19,7 @@ Cluster K3S (k3s `v1.34.3`) — 4 nœuds enregistrés :
 
 MongoDB prod : replica set sur les 3 VPS (`role.homelab/mongodb-prod`). PostgreSQL prod : CloudNativePG 1.30, 1 instance (`role.homelab/postgres-prod`, aujourd’hui `vps-4541d883`). Labels de nœuds : `infra/label-nodes.sh`.
 
-- **GMK / LLM** : Ollama tourne **sur l’hôte**, pas comme Deployment K3S. Exposé hors cluster (VPN). **Inaccessible depuis les pods** — pas de Service cluster pour l’instant. Suite prévue : `Service` + `Endpoints` (ou ExternalName) vers l’URL Ollama, même pattern que whisper / ComfyUI. Rester sur `Endpoints` : ArgoCD exclut `EndpointSlice` par défaut (voir `applications/ozzie/10-service.yaml`).
+- **GMK / LLM** : llama-server ROCm tourne **dans le cluster** (namespace `ai-stack`), un Deployment par modèle via overlay. Services joignables depuis les pods, consommés par LiteLLM. Pour brancher un service **hôte** (ComfyUI, OpenClaw), pattern `Service` + `Endpoints` → rester sur `Endpoints`, ArgoCD exclut `EndpointSlice` par défaut (voir `applications/ozzie/10-service.yaml`).
 - **Image gen** : ComfyUI sur l’hôte GMK, pattern `Service` + `Endpoints` → `100.64.0.4:8000` (`20-sd-server.yaml`). Idem, commenté / non déployé.
 - **ArgoCD** (`argocd/`) : GitOps, `kubectl apply -k argocd/`. Version pinée `v3.3.0`.
 - **ApplicationSet** : auto-découvre `applications/*/` et déploie.
@@ -75,39 +75,66 @@ KUBECONFIG=~/.kube/home.dohrm kubectl ...
 
 ## AI Stack
 
-État GitOps actuel (`applications/ai-stack/kustomization.yaml`) : **seul le namespace est déployé**. Storage, overlays LLM, whisper, sd-server, Open WebUI et ingress sont commentés.
+Déployé (`applications/ai-stack/kustomization.yaml`) : namespace, storage, et trois Deployments sur `gmk-ai-master` —
 
-Ancien chemin in-cluster (llama-server ROCm, **plus utilisé**) — conservé dans le repo, dormant :
+| Service | Modèle | Rôle |
+|---------|--------|------|
+| `qwen35b-a3b-llm-server` | Qwen3.6-35B-A3B UD-Q6_K + mmproj | chat multimodal |
+| `qwen3-embedding-4b-llm-server` | Qwen3-Embedding-4B Q8_0 | embeddings (2560 dims) |
+| `whisper-server` | ggml-large-v3-turbo | transcription |
 
-- `applications/ai-stack/base/llm.yaml` : template Deployment/Service
-- Overlays : `overlays/gemma4` (Gemma 4 26B), `overlays/qwen3-embedding-4b` (embeddings, Qwen3-Embedding-4B Q8_0)
-- Pour réactiver un overlay : le décommenter sous `resources:` (et le reste de la stack si besoin)
+`base/llm.yaml` est le template Deployment/Service ; chaque modèle est un overlay sous `overlays/` qui patche `env` et `args`. Consommateurs : `applications/litellm/20-config.yaml`.
 
-Chemin actuel : **Ollama sur `gmk-ai-master`**, hors cluster. Les pods ne peuvent pas l’appeler. Brancher plus tard un Service cluster sur l’URL Ollama.
+Commenté / non déployé : `20-sd-server.yaml` (ComfyUI hôte), `30-open-webui.yaml`, `40-ingress.yaml`, et l'overlay de repli `overlays/qwen3.5-9b-decision`.
 
-Open WebUI (`30-open-webui.yaml`, non déployé) pointait encore vers `gemma4-llm-server` / `qwen3-embedding-4b-llm-server` in-cluster, avec `OLLAMA_BASE_URL` vide.
+`overlays/gemma4` est **mort** : il alimente un `configMapGenerator llm-server-config` que `base/llm.yaml` ne consomme plus (passé aux `env` directs). À supprimer ou réécrire avant tout usage.
+
+### Service de décision (chantier ouvert)
+
+Un module Python exposera une API de décision façon OpenRouter `/api/alpha/decisions`. Cible : **Open-Jev-9B** — LoRA + **tête scalaire** + température apprise sur Qwen3.5-9B, donc **inservable par llama.cpp** (rien de tout ça n'entre dans un GGUF) ; il lui faut son serveur PyTorch, à valider en ROCm sur gfx1151.
+
+⚠ Ne **jamais** charger un GGUF estampillé « Jev » dans `base/llm.yaml` : c'est le backbone décapité de sa tête, il se charge sans erreur et renvoie des probabilités fausses, sans trace dans les logs.
+
+Repli prêt et désactivé : `overlays/qwen3.5-9b-decision` (même backbone servi nu, décision par logprobs du premier token).
 
 ## Strix Halo — matériel GPU
 
-Toujours vrai pour Ollama (et ComfyUI) **sur l’hôte** GMK.
+Vaut pour les pods `ai-stack` comme pour ComfyUI sur l’hôte.
 
 - Accès GPU : `/dev/dri` + `/dev/kfd` (ROCm)
 - Un pod ROCm in-cluster exigait `securityContext: privileged: true, runAsUser: 0` (SELinux bloque les allocs HSA)
-- Modèles historiquement sur le nœud : `/srv/ai-models/{llm,diffusion}`
+- Modèles sur le nœud : **`/home/michael/models`** (PV `ai-models-llm-pv`) et `/home/michael/whisper.cpp/models` (PV `ai-models-whisper-pv`).
 
-### Flags llama-server (gfx1151) — si le chemin in-cluster revient
+### Flags llama-server (gfx1151)
 
 - `--no-mmap` : évite les crashs mmap sur gfx1151
 - `-fa 1` : flash attention
 - `-ngl 999` : offload tous les layers GPU
 
+Vérifié sur ce cluster (build b10664) pour tout usage « probabilités » :
+
+- les `logprobs` sont renvoyés **avant sampling** — valeurs identiques à `temperature` 0 et 2.0, insensibles à `top_k`. Une requête qui passe `post_sampling_probs: true` les écrase à 1.0.
+- `--reasoning-budget 0` est **obligatoire** dès qu'on touche `/v1/chat/completions` sur un modèle à thinking : sans lui le premier token est du monologue (`reasoning_content`).
+- `--jinja` est activé par défaut dans cette build.
+
 ### Mémoire GPU (UMA unifiée)
 
-| Source | Taille | Config |
-|--------|--------|--------|
-| VRAM UMA (BIOS) | ~48 Go | Allouer le max dans le BIOS |
-| GTT (GRUB) | ~124 Go | `amdgpu.gttsize=126976 ttm.pages_limit=32505856` |
-| **Total accessible GPU** | **~172 Go** | Limité par RAM physique |
+**Mesuré le 2026-09-26 sur `gmk-ai-master`** — le « ~172 Go » qui figurait ici était faux, il additionnait VRAM et GTT alors que les deux sont pris sur la même RAM physique :
+
+| Mesure | Valeur |
+|--------|--------|
+| `MemTotal` | **92,9 Gio** |
+| `MemAvailable` (3 modèles résidents) | **17,2 Gio** |
+| GTT utilisé / total | 50,4 / 90,2 Gio |
+| VRAM dédiée | 1 Gio |
+| `requests` K8s posées / allouables | 67 / 92,9 Gio |
+
+**La RAM est une contrainte dure.** Chiffrer avant toute proposition qui ajoute un modèle résident : une seconde instance 35B-A3B ne rentre pas, et le scheduler la refuse avant même l'OOM. Commandes :
+
+```bash
+KUBECONFIG=~/.kube/home.dohrm kubectl exec -n ai-stack deploy/qwen35b-a3b-llm-server -- \
+  sh -c 'grep -E "MemTotal|MemAvailable" /proc/meminfo; cat /sys/class/drm/card*/device/mem_info_gtt_used'
+```
 
 Params GRUB à ajouter dans `GRUB_CMDLINE_LINUX` : `amd_iommu=off amdgpu.gttsize=126976 ttm.pages_limit=32505856`
 

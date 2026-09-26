@@ -13,7 +13,7 @@ namePrefix: qwen35b-a3b-
 # projecteur n'est auto-chargé que via `-hf`, jamais avec un `--model` local.
 # À télécharger une fois sur gmk-ai-master (~858 Mio) :
 #   huggingface-cli download unsloth/Qwen3.6-35B-A3B-GGUF mmproj-F16.gguf \
-#     --local-dir /srv/ai-models/llm/Qwen3.6-35B-A3B-GGUF
+#     --local-dir /home/michael/models/Qwen3.6-35B-A3B-GGUF
 patches:
   - target:
       kind: Deployment

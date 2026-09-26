@@ -1,0 +1,120 @@
+resources:
+  - ../../base
+
+labels:
+  - includeSelectors: true
+    pairs:
+      app: qwen3-5-9b-decision
+      role: decision
+
+namePrefix: qwen3-5-9b-decision-
+
+##############################################################################
+# REPLI. À n'activer que si Open-Jev-9B ne peut pas être servi sur gfx1151.
+#
+# Open-Jev-9B (ZefanCai) est un LoRA + une tête de décision scalaire greffés
+# sur Qwen3.5-9B, avec une température apprise. Ni la tête ni la température
+# ne sont représentables en GGUF : llama.cpp ne peut pas le servir, il lui
+# faut son propre serveur PyTorch (jev.server / vllm-jev).
+# Cet overlay est le plan B : le MÊME backbone, servi nu par llama-server,
+# avec extraction des probabilités par logprobs du premier token.
+#
+# ⚠ Ce repli est strictement moins bon en calibration : on perd la tête
+# entraînée ET la température apprise. C'est l'approche « logprobs sur un
+# modèle généraliste », pas un modèle de décision. Ne pas l'activer par
+# confort si Open-Jev est encore jouable.
+#
+# ⚠⚠ NE JAMAIS charger ici un GGUF estampillé « Jev ». Plusieurs dépôts en
+# proposent ; un GGUF de ce modèle est par construction le backbone décapité
+# de sa tête de décision. Il se chargerait sans erreur et renverrait des
+# probabilités confiantes et fausses — le seul échec de cette chaîne qui ne
+# laisse aucune trace dans un log.
+#
+# Réglages, même logique que l'instance de décision 35B :
+#   --temp 0             greedy. Sans effet sur les logprobs, que
+#                        llama-server renvoie AVANT sampling tant que la
+#                        requête ne passe pas `post_sampling_probs: true`
+#                        (mesuré sur ce cluster : valeurs identiques à
+#                        temp 0 et temp 2.0).
+#   --reasoning-budget 0 Qwen3.5-9B pense PAR DÉFAUT. Le module attaque
+#                        /completion avec un prompt brut, qui ferme <think>
+#                        lui-même — mais ce flag protège le jour où le
+#                        service est touché sur /v1/chat/completions, où le
+#                        template relancerait le monologue et où le premier
+#                        token ne porterait plus la décision.
+#   --n-predict 256      plafond dur (llama-server prend le min avec la
+#                        requête). Une décision consomme 1 à 8 tokens.
+#   --cache-reuse 256    le bloc questions/criteria est un préfixe stable
+#                        d'un appel à l'autre, seul le `state` varie.
+#
+# CACHE_TYPE f16 : 32 couches × 4 têtes KV × (256+256) = 128 KiB/token,
+# soit 2,0 Gio à 16k. On ne quantifie pas le KV quand le produit du service
+# EST la distribution de probabilité.
+#
+# PARALLEL_SLOTS 1 : déterminisme. n_ctx_slot = 16384 / n_slots si on monte.
+#
+# Budget mesuré sur gmk-ai-master (92,9 Gio, 17,2 disponibles) :
+#   8,9 poids + 2,0 KV + ~1 buffers ≈ 12 Gio. Passe sans rien libérer.
+#
+# À télécharger sur gmk-ai-master (~9,5 Go) — le PV monte /home/michael/models.
+# ⚠ Vérifier le nom exact du fichier dans le dépôt avant de lancer :
+#   huggingface-cli download unsloth/Qwen3.5-9B-GGUF Qwen3.5-9B-Q8_0.gguf \
+#     --local-dir /home/michael/models/Qwen3.5-9B-GGUF
+##############################################################################
+patches:
+  - target:
+      kind: Deployment
+      name: llm-server
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--temp"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "0"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--reasoning-budget"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "0"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--n-predict"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "256"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--cache-reuse"
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "256"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "4"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 14Gi
+      - op: replace
+        path: /spec/template/spec/initContainers/0/env
+        value:
+          - name: MODEL_PATH
+            value: /models/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q8_0.gguf
+      - op: replace
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: MODEL_PATH
+            value: /models/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q8_0.gguf
+          - name: MODEL_ALIAS
+            value: qwen3.5-9b-decision
+          - name: CTX_SIZE
+            value: "16384"
+          - name: PARALLEL_SLOTS
+            value: "1"
+          - name: THREADS
+            value: "4"
+          - name: CACHE_TYPE_K
+            value: f16
+          - name: CACHE_TYPE_V
+            value: f16
