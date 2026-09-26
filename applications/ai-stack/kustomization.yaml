@@ -11,7 +11,7 @@ resources:
   # Repli décision, si Open-Jev-9B ne peut pas être servi sur gfx1151.
   # Tient sans rien libérer (~12 Gio pour 17,2 disponibles), mais perd la
   # tête de décision entraînée et la température apprise. Voir l'overlay.
-  # - overlays/qwen3.5-9b-decision
+  - overlays/qwen3.5-9b-decision
   - 10-whisper-server.yaml
   # - 20-sd-server.yaml
   # - 30-open-webui.yaml
