@@ -87,8 +87,6 @@ Déployé (`applications/ai-stack/kustomization.yaml`) : namespace, storage, et 
 
 Commenté / non déployé : `20-sd-server.yaml` (ComfyUI hôte), `30-open-webui.yaml`, `40-ingress.yaml`, et l'overlay de repli `overlays/qwen3.5-9b-decision`.
 
-`overlays/gemma4` est **mort** : il alimente un `configMapGenerator llm-server-config` que `base/llm.yaml` ne consomme plus (passé aux `env` directs). À supprimer ou réécrire avant tout usage.
-
 ### Service de décision (chantier ouvert)
 
 Un module Python exposera une API de décision façon OpenRouter `/api/alpha/decisions`. Cible : **Open-Jev-9B** — LoRA + **tête scalaire** + température apprise sur Qwen3.5-9B, donc **inservable par llama.cpp** (rien de tout ça n'entre dans un GGUF) ; il lui faut son serveur PyTorch, à valider en ROCm sur gfx1151.

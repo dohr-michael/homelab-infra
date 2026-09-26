@@ -18,9 +18,6 @@ Non déployés, conservés commentés dans `kustomization.yaml` : `20-sd-server.
 (la génération d'images est passée sur ComfyUI **hôte**), `30-open-webui.yaml`,
 `40-ingress.yaml`, et l'overlay de repli `overlays/qwen3.5-9b-decision`.
 
-⚠ `overlays/gemma4` est **mort** : il alimente un `configMapGenerator llm-server-config`
-que `base/llm.yaml` ne consomme plus, depuis le passage aux `env` directs.
-
 ## Structure
 
 ```
