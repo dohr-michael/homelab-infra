@@ -41,7 +41,7 @@ metadata:
     app: ozzie
 subsets:
   - addresses:
-      - ip: 100.64.0.4   # gmk-ai-master (IP Headscale)
+      - ip: 100.64.0.12
     ports:
       - name: http
         port: 18789
