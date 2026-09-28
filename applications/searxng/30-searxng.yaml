@@ -24,7 +24,7 @@ spec:
         app: searxng
       annotations:
         # Redémarre le pod quand la config change (sinon ConfigMap ignoré).
-        homelab.dohrm.fr/config-rev: "1"
+        homelab.dohrm.fr/config-rev: "2"
     spec:
       securityContext:
         runAsUser: 977

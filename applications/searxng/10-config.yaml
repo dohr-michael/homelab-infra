@@ -17,6 +17,15 @@
 #   ajoute l'IP de Caddy. SearXNG remonte la chaîne tant que l'adresse est
 #   dans trusted_proxies : le premier hop hors liste est le vrai client.
 #   Si trusted_proxies est trop court, tout le monde a l'IP de Caddy.
+#   Mesuré le 2026-09-28 : Caddy arrive dans Traefik en 10.42.x (DNAT du
+#   hostPort), d'où `X-Forwarded-For: <client>, 10.42.0.155`.
+#
+# ACCÈS AGENTS DU TAILNET (pass_ip) — sans limiter, JSON compris
+#   Passer par https://search.home.dohrm.fr (VPN-only) : Caddy voit
+#   100.64.x.y et le met dans X-Forwarded-For. 100.64.0.0/10 n'est donc PAS
+#   dans trusted_proxies : c'est un client, pas un relais.
+#   Via search.dohrm.fr, un nœud du tailnet sort par son IP publique et subit
+#   le limiter comme tout le monde (link_token → 302 vers /).
 ##############################################################################
 ---
 apiVersion: v1
@@ -33,6 +42,11 @@ data:
 
     search:
       autocomplete: "duckduckgo"
+      # json pour les agents. Aussi exposé sur search.dohrm.fr, mais derrière
+      # le limiter pour qui n'est pas dans pass_ip.
+      formats:
+        - html
+        - json
 
     server:
       base_url: "https://search.dohrm.fr/"
@@ -56,8 +70,13 @@ data:
       '::1',
       '10.42.0.0/16',   # pods (Traefik)
       '10.43.0.0/16',   # services
-      '100.64.0.0/10',  # tailnet (Caddy via 100.64.0.1)
     ]
 
     [botdetection.ip_limit]
     link_token = true
+
+    [botdetection.ip_lists]
+    # Prioritaire sur toute la détection de robots (voir en-tête).
+    pass_ip = [
+      '100.64.0.0/10',  # tailnet, via search.home.dohrm.fr
+    ]

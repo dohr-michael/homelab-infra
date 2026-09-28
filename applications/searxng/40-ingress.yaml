@@ -5,7 +5,9 @@
 # route déjà vers Traefik, avec le certificat wildcard. external-dns crée le
 # A record OVH vers 51.178.19.49 à partir de cet Ingress.
 #
-# Pas de DNS Headscale à ajouter : il n'est autoritaire que sur home.dohrm.fr.
+# search.home.dohrm.fr : même backend, VPN-only (filtre Caddy). Sert aux
+# agents du tailnet, qui y arrivent en 100.64.x → pass_ip (voir 10-config).
+# Record Headscale : applications/headscale/10-dns-sync.yaml.
 ##############################################################################
 ---
 apiVersion: networking.k8s.io/v1
@@ -17,6 +19,16 @@ metadata:
 spec:
   rules:
     - host: search.dohrm.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: searxng
+                port:
+                  number: 8080
+    - host: search.home.dohrm.fr
       http:
         paths:
           - path: /
