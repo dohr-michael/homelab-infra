@@ -1,0 +1,28 @@
+##############################################################################
+# search.dohrm.fr — PUBLIC.
+#
+# Rien à faire côté Caddy : le bloc `*.dohrm.fr` (sans filtre remote_ip)
+# route déjà vers Traefik, avec le certificat wildcard. external-dns crée le
+# A record OVH vers 51.178.19.49 à partir de cet Ingress.
+#
+# Pas de DNS Headscale à ajouter : il n'est autoritaire que sur home.dohrm.fr.
+##############################################################################
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: searxng
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: search.dohrm.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: searxng
+                port:
+                  number: 8080

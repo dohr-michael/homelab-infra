@@ -1,0 +1,63 @@
+##############################################################################
+# Configuration SearXNG — instance PUBLIQUE sur search.dohrm.fr
+#
+# `use_default_settings: true` : on ne surcharge que l'écart aux défauts
+# (searx/settings.yml upstream). Le secret_key vient de SEARXNG_SECRET.
+#
+# POURQUOI LE LIMITER EST OBLIGATOIRE ICI
+#   Une instance ouverte est une cible pour les scrapers qui s'en servent de
+#   proxy gratuit vers Google/Bing. Ce sont les moteurs amont qui paient, puis
+#   ils bannissent l'IP SORTANTE — celle du VPS qui héberge le pod. Le limiter
+#   (+ Valkey pour son état) coupe ce trafic avant qu'il ne parte.
+#
+# CHAÎNE D'IP CLIENT
+#   Client → Caddy (vps-a7c3e9b8, bloc `*.dohrm.fr`) → Traefik → pod.
+#   Caddy pose X-Forwarded-For, Traefik le conserve grâce à
+#   forwardedHeaders.trustedIPs (cluster-baseline/30-traefik-lb.yaml) et
+#   ajoute l'IP de Caddy. SearXNG remonte la chaîne tant que l'adresse est
+#   dans trusted_proxies : le premier hop hors liste est le vrai client.
+#   Si trusted_proxies est trop court, tout le monde a l'IP de Caddy.
+##############################################################################
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: searxng
+data:
+  settings.yml: |
+    use_default_settings: true
+
+    general:
+      instance_name: "search.dohrm.fr"
+      enable_metrics: false
+
+    search:
+      autocomplete: "duckduckgo"
+
+    server:
+      base_url: "https://search.dohrm.fr/"
+      limiter: true
+      # Active link_token et durcit le botdetection pour une instance ouverte.
+      public_instance: true
+      # Les images passent par nous : le moteur amont ne voit pas le client.
+      # URL signées par secret_key, donc pas un proxy ouvert.
+      image_proxy: true
+
+    valkey:
+      url: "valkey://valkey.searxng.svc.cluster.local:6379/0"
+
+  limiter.toml: |
+    [botdetection]
+    ipv4_prefix = 32
+    ipv6_prefix = 48
+
+    trusted_proxies = [
+      '127.0.0.0/8',
+      '::1',
+      '10.42.0.0/16',   # pods (Traefik)
+      '10.43.0.0/16',   # services
+      '100.64.0.0/10',  # tailnet (Caddy via 100.64.0.1)
+    ]
+
+    [botdetection.ip_limit]
+    link_token = true

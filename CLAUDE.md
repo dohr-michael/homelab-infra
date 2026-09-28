@@ -57,6 +57,7 @@ kubectl kustomize argocd/
 - **Deployment strategy** : `Recreate` for GPU pods (shared GPU, no rolling update)
 - **AppProject** : `homelab` — `sourceRepos: ["*"]`
 - **Base domain** : `home.dohrm.fr` (Caddy sur `100.64.0.1`, VPN-only via Headscale). DNS tailnet : `applications/headscale/10-dns-sync.yaml`
+- **Public** : `<app>.dohrm.fr` (hors `home.`) → bloc Caddy `*.dohrm.fr` sans filtre IP → Traefik. Un Ingress suffit, external-dns crée le A record (ex. `temper`, `search`)
 
 ## Adding a New Application
 

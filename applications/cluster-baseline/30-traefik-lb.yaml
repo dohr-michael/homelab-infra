@@ -89,6 +89,18 @@ spec:
     ports:
       web:
         exposedPort: 81
+        # Sans ça, Traefik JETTE le X-Forwarded-For posé par Caddy et le
+        # remplace par l'IP de Caddy : toutes les apps voient un seul client.
+        # Rédhibitoire pour le limiter de SearXNG (search.dohrm.fr, public),
+        # qui bannirait tout le monde en bloc. Les plages sont celles déjà
+        # autorisées à joindre 81 (loadBalancerSourceRanges ci-dessus) : on ne
+        # fait confiance qu'à ce qui peut de toute façon parler à Traefik.
+        forwardedHeaders:
+          trustedIPs:
+            - 127.0.0.0/8
+            - 10.42.0.0/16
+            - 10.43.0.0/16
+            - 100.64.0.0/10
       websecure:
         exposedPort: 444
 # ---------------------------------------------------------------------------

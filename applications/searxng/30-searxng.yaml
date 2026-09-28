@@ -1,0 +1,81 @@
+##############################################################################
+# SearXNG — métamoteur, image officielle (granian sur :8080).
+#
+# /etc/searxng est le ConfigMap, en lecture seule. L'entrypoint tente un
+# `chown -R` du dossier de config quand il tourne en root : FORCE_OWNERSHIP=false
+# le réduit à un avertissement au lieu d'une erreur sur un volume RO.
+#
+# Le pod part sur un VPS (pas de nodeSelector ; gmk-ai-master est tainté).
+# L'IP publique de ce VPS est celle que voient Google & co.
+##############################################################################
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: searxng
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: searxng
+  template:
+    metadata:
+      labels:
+        app: searxng
+      annotations:
+        # Redémarre le pod quand la config change (sinon ConfigMap ignoré).
+        homelab.dohrm.fr/config-rev: "1"
+    spec:
+      containers:
+        - name: searxng
+          image: docker.io/searxng/searxng:2026.9.25-12f8b6515
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: FORCE_OWNERSHIP
+              value: "false"
+          envFrom:
+            - secretRef:
+                name: searxng
+          volumeMounts:
+            - name: config
+              mountPath: /etc/searxng
+              readOnly: true
+            - name: cache
+              mountPath: /var/cache/searxng
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              memory: 768Mi
+      volumes:
+        - name: config
+          configMap:
+            name: searxng
+        - name: cache
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: searxng
+spec:
+  selector:
+    app: searxng
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
