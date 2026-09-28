@@ -1,9 +1,9 @@
 ##############################################################################
 # SearXNG — métamoteur, image officielle (granian sur :8080).
 #
-# /etc/searxng est le ConfigMap, en lecture seule. L'entrypoint tente un
-# `chown -R` du dossier de config quand il tourne en root : FORCE_OWNERSHIP=false
-# le réduit à un avertissement au lieu d'une erreur sur un volume RO.
+# Tourne en searxng (977), pas en root : fsGroup rend le cache emptyDir
+# inscriptible. L'entrypoint avertit encore que /etc/searxng (ConfigMap RO)
+# appartient à root — sans conséquence, le fichier est lisible.
 #
 # Le pod part sur un VPS (pas de nodeSelector ; gmk-ai-master est tainté).
 # L'IP publique de ce VPS est celle que voient Google & co.
@@ -26,15 +26,17 @@ spec:
         # Redémarre le pod quand la config change (sinon ConfigMap ignoré).
         homelab.dohrm.fr/config-rev: "1"
     spec:
+      securityContext:
+        runAsUser: 977
+        runAsGroup: 977
+        fsGroup: 977
+        runAsNonRoot: true
       containers:
         - name: searxng
           image: docker.io/searxng/searxng:2026.9.25-12f8b6515
           ports:
             - name: http
               containerPort: 8080
-          env:
-            - name: FORCE_OWNERSHIP
-              value: "false"
           envFrom:
             - secretRef:
                 name: searxng
