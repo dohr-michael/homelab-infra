@@ -140,6 +140,14 @@ spec:
       roles:
         - name: readWrite
           db: temper_dev
+    - name: temper-modules
+      db: temper_modules
+      passwordSecretRef:
+        name: mongo-prod-temper-modules-user
+        key: password
+      roles:
+        - name: readWrite
+          db: temper_modules
 
   replsets:
     - name: rs0

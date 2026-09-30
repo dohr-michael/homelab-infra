@@ -11,4 +11,5 @@ files:
   - mongo-users.secret.yaml
   - mongo-temper-user.secret.yaml
   - mongo-temper-dev-user.secret.yaml
+  - mongo-temper-modules-user.secret.yaml
   - mongo-backup-s3.secret.yaml
