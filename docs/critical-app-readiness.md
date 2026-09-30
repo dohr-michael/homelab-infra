@@ -657,6 +657,7 @@ Dev vit donc sur le **replica set de production**, isolé par base de données :
 |---|---|---|---|
 | `temper` | `temper` | readWrite sur `temper` | `mongo-temper-user.secret.yaml` |
 | `temper-dev` | `temper_dev` | readWrite sur `temper_dev` | `mongo-temper-dev-user.secret.yaml` |
+| `temper-modules` | `temper_modules` | readWrite sur `temper_modules` | `mongo-temper-modules-user.secret.yaml` |
 
 La base de dev est `temper_dev` et non `temper-dev` : un tiret est légal dans un
 nom de base MongoDB, mais casse `db.temper-dev` dans mongosh (lu comme une

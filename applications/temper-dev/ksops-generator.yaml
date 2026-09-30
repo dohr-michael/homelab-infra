@@ -9,3 +9,4 @@ metadata:
 files:
   - 10-infra-secrets.secret.yaml
   - 11-docker-secrets.secret.yaml
+  - 12-temper-modules-secrets.secret.yaml
