@@ -1,0 +1,28 @@
+##############################################################################
+# cdn.dohrm.fr — PUBLIC.
+#
+# Rien à faire côté Caddy : le bloc `*.dohrm.fr` route vers Traefik.
+# external-dns crée le A record OVH à partir de cet Ingress.
+#
+# Vidéos (plus tard) : ajouter un path `/videos` → Service RustFS
+# (ExternalName vers rustfs.rustfs.svc) sur un bucket en lecture publique.
+##############################################################################
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cdn
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: cdn.dohrm.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: cdn
+                port:
+                  number: 8080

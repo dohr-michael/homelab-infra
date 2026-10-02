@@ -1,0 +1,44 @@
+##############################################################################
+# nginx — sert le checkout git-sync (/srv/current, symlink basculé
+# atomiquement à chaque nouveau commit).
+#
+# Pas de hash côté serveur : les noms hashés sont l'affaire du client
+# (pre-hook). D'où un max-age court par défaut.
+##############################################################################
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cdn-nginx
+data:
+  default.conf: |
+    server {
+      listen 8080;
+      server_name _;
+      root /srv/current;
+
+      autoindex off;
+      server_tokens off;
+      etag on;
+
+      gzip on;
+      gzip_types image/svg+xml application/json text/css application/javascript;
+
+      location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+      }
+
+      # .git, .github, .gitignore… ne sortent pas.
+      location ~ /\. {
+        return 404;
+      }
+
+      location / {
+        add_header Cache-Control "public, max-age=3600" always;
+        add_header Access-Control-Allow-Origin "*" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        try_files $uri =404;
+      }
+    }

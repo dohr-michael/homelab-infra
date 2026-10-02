@@ -1,0 +1,160 @@
+##############################################################################
+# CDN statique — git-sync + nginx.
+#
+# - initContainer git-sync --one-time : premier clone avant que nginx démarre
+#   (sinon 404 le temps du clone).
+# - sidecar git-sync : `git ls-remote` toutes les 60 s, bascule le symlink
+#   /srv/current sur le nouveau worktree. Pas de webhook.
+# - fsGroup 101 (nginx) : l'emptyDir est setgid, nginx lit ce que git-sync
+#   (65533) écrit.
+#
+# Repo privé via SSH : deploy key read-only + known_hosts GitHub épinglé
+# (git-ssh.secret.yaml), montés à l'emplacement par défaut de git-sync
+# (/etc/git-secret/{ssh,known_hosts}). Mode 0440 + fsGroup : le fichier
+# appartient à root, ssh ne râle pas, git-sync (65533) le lit via le groupe.
+#
+# Le pod part sur un VPS (pas de nodeSelector ; gmk-ai-master est tainté).
+# Vidéos plus tard : pas dans git → bucket RustFS derrière un path d'Ingress.
+##############################################################################
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cdn
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cdn
+  template:
+    metadata:
+      labels:
+        app: cdn
+      annotations:
+        # Redémarre le pod quand la config change (sinon ConfigMap ignoré).
+        homelab.dohrm.fr/config-rev: "1"
+    spec:
+      securityContext:
+        fsGroup: 101
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: git-clone
+          image: registry.k8s.io/git-sync/git-sync:v4.7.1
+          args:
+            - --repo=git@github.com:dohr-michael/cdn.git
+            - --ref=main
+            - --root=/srv
+            - --link=current
+            - --depth=1
+            - --period=60s
+            - --ssh-key-file=/etc/git-secret/ssh
+            - --ssh-known-hosts-file=/etc/git-secret/known_hosts
+          env:
+            - name: GITSYNC_ONE_TIME
+              value: "true"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: content
+              mountPath: /srv
+            - name: git-secret
+              mountPath: /etc/git-secret
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 256Mi
+      containers:
+        - name: git-sync
+          image: registry.k8s.io/git-sync/git-sync:v4.7.1
+          args:
+            - --repo=git@github.com:dohr-michael/cdn.git
+            - --ref=main
+            - --root=/srv
+            - --link=current
+            - --depth=1
+            - --period=60s
+            - --ssh-key-file=/etc/git-secret/ssh
+            - --ssh-known-hosts-file=/etc/git-secret/known_hosts
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: content
+              mountPath: /srv
+            - name: git-secret
+              mountPath: /etc/git-secret
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 256Mi
+        - name: nginx
+          image: docker.io/nginxinc/nginx-unprivileged:1.30.5-alpine-slim
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: content
+              mountPath: /srv
+              readOnly: true
+            - name: config
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: git-secret
+          secret:
+            secretName: cdn-git
+            defaultMode: 0440
+        - name: content
+          emptyDir: {}
+        - name: config
+          configMap:
+            name: cdn-nginx
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cdn
+spec:
+  selector:
+    app: cdn
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
