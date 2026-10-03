@@ -9,6 +9,7 @@ resources:
   - 11-scheduled-backup.yaml
   - 20-litellm.yaml
   - 20-n8n.yaml
+  - 20-authentik.yaml
   # Copier 20-database.example.yaml → 20-<app>.yaml pour créer une base.
 
 generators:
