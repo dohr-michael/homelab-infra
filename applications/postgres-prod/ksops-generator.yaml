@@ -11,3 +11,4 @@ files:
   - postgres-backup-s3.secret.yaml
   - litellm-user.secret.yaml
   - n8n-user.secret.yaml
+  - authentik-user.secret.yaml

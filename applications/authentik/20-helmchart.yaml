@@ -1,0 +1,50 @@
+# K3s Helm controller installe le chart officiel, épinglé à une version corrigée.
+# Le Secret SOPS est créé par la même Application ArgoCD (sync wave -1).
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: authentik
+  namespace: authentik
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  chart: authentik
+  repo: https://charts.goauthentik.io
+  version: 2026.8.2
+  targetNamespace: authentik
+  valuesContent: |-
+    global:
+      nodeSelector:
+        kubernetes.io/hostname: vps-4541d883
+      priorityClassName: homelab-platform
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: authentik-data
+      volumeMounts:
+        - name: data
+          mountPath: /data
+    authentik:
+      existingSecret:
+        secretName: authentik-config
+    postgresql:
+      enabled: false
+    blueprints:
+      configMaps:
+        - authentik-blueprints
+    server:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 768Mi
+        limits:
+          memory: 1536Mi
+    worker:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 768Mi
+        limits:
+          memory: 1536Mi

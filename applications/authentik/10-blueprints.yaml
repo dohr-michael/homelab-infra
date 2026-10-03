@@ -1,0 +1,21 @@
+# authentik traite ce ConfigMap comme un blueprint. Les prochains providers
+# et applications OIDC peuvent être ajoutés ici avec le même mécanisme GitOps.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-blueprints
+  namespace: authentik
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+data:
+  00-homelab.yaml: |
+    version: 1
+    metadata:
+      name: homelab-base
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_core.group
+        state: present
+        identifiers:
+          name: homelab-users
