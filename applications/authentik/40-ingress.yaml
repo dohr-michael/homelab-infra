@@ -1,0 +1,21 @@
+# Domaine public indispensable aux applications clientes hors VPN et aux
+# callbacks des fournisseurs sociaux. Caddy *.dohrm.fr route vers Traefik.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: authentik
+  namespace: authentik
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: auth.dohrm.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: authentik-server
+                port:
+                  number: 80

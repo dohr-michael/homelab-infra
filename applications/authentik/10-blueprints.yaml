@@ -1,0 +1,64 @@
+# authentik traite ce ConfigMap comme un blueprint. Les prochains providers
+# et applications OIDC peuvent être ajoutés ici avec le même mécanisme GitOps.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-blueprints
+  namespace: authentik
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+data:
+  00-homelab.yaml: |
+    version: 1
+    metadata:
+      name: homelab-base
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_core.group
+        state: present
+        identifiers:
+          name: homelab-users
+  10-temper-dev.yaml: |
+    version: 1
+    metadata:
+      name: temper-dev-oidc
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_providers_oauth2.oauth2provider
+        state: present
+        id: temper-dev-provider
+        identifiers:
+          name: temper-dev
+        attrs:
+          client_type: public
+          client_id: temper-dev
+          grant_types: [authorization_code, refresh_token]
+          issuer_mode: per_provider
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+            - !Find [authentik_providers_oauth2.scopemapping, [scope_name, offline_access]]
+          redirect_uris:
+            - matching_mode: strict
+              url: https://temper-dev.dohrm.fr/callback
+              redirect_uri_type: authorization
+            - matching_mode: strict
+              url: http://localhost:5173/callback
+              redirect_uri_type: authorization
+            - matching_mode: strict
+              url: https://temper-dev.dohrm.fr
+              redirect_uri_type: logout
+            - matching_mode: strict
+              url: http://localhost:5173
+              redirect_uri_type: logout
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: temper-dev
+        attrs:
+          name: Temper dev
+          provider: !KeyOf temper-dev-provider
