@@ -4,7 +4,9 @@ metadata:
   name: authentik-data
   namespace: authentik
   annotations:
-    argocd.argoproj.io/sync-wave: "-1"
+    # WaitForFirstConsumer: le PVC et le HelmChart doivent être créés
+    # dans la même vague, sinon Argo attend le PVC avant de créer le pod.
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   accessModes: [ReadWriteOnce]
   storageClassName: local-path-retain
