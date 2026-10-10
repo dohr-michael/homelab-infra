@@ -1,0 +1,110 @@
+# CNPG provisions the database and owner; init only creates Zitadel's schemas.
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: zitadel
+  namespace: zitadel
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  chart: zitadel
+  repo: https://charts.zitadel.com
+  version: 10.4.0
+  targetNamespace: zitadel
+  valuesContent: |-
+    replicaCount: 1
+    image:
+      tag: v4.19.2
+    nodeSelector:
+      kubernetes.io/hostname: vps-4541d883
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 1024Mi
+    zitadel:
+      masterkeySecretName: zitadel-config
+      configSecretName: zitadel-config
+      configmapConfig:
+        ExternalDomain: zitadel.dohrm.fr
+        ExternalPort: 443
+        ExternalSecure: true
+        TLS:
+          Enabled: false
+        Database:
+          Postgres:
+            Host: postgres-prod-rw.postgres-prod.svc.cluster.local
+            Port: 5432
+            Database: zitadel
+            User:
+              Username: zitadel
+              SSL:
+                Mode: require
+        Caches:
+          Connectors:
+            Postgres:
+              Enabled: true
+            Redis:
+              Enabled: false
+        FirstInstance:
+          InstanceName: Homelab
+          Org:
+            Name: Homelab
+            # Create automation credentials later with the required permissions.
+            Machine: null
+            Human:
+              UserName: dohr.michael@gmail.com
+              FirstName: Michael
+              LastName: Dohr
+              Email:
+                Address: dohr.michael@gmail.com
+                Verified: true
+              PasswordChangeRequired: true
+        DefaultInstance:
+          Features:
+            LoginV2:
+              Required: true
+              BaseURI: https://zitadel.dohrm.fr/ui/v2/login
+    initJob:
+      command: zitadel
+      activeDeadlineSeconds: 600
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          memory: 512Mi
+    setupJob:
+      activeDeadlineSeconds: 600
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          memory: 512Mi
+    cleanupJob:
+      enabled: false
+    service:
+      annotations:
+        traefik.ingress.kubernetes.io/service.serversscheme: h2c
+    ingress:
+      enabled: false
+    login:
+      enabled: true
+      image:
+        tag: v4.19.2
+      loginServiceKeySecretName: zitadel-config
+      sessionCookieSecretName: zitadel-config
+      nodeSelector:
+        kubernetes.io/hostname: vps-4541d883
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          memory: 512Mi
+      ingress:
+        enabled: false
+    postgresql:
+      enabled: false

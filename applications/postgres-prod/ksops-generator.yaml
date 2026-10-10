@@ -12,3 +12,4 @@ files:
   - litellm-user.secret.yaml
   - n8n-user.secret.yaml
   - authentik-user.secret.yaml
+  - zitadel-user.secret.yaml
