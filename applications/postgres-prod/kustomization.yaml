@@ -11,6 +11,7 @@ resources:
   - 20-n8n.yaml
   - 20-authentik.yaml
   - 20-zitadel.yaml
+  - 20-stalwart.yaml
   # Copier 20-database.example.yaml → 20-<app>.yaml pour créer une base.
 
 generators:

@@ -52,6 +52,11 @@ PLATFORM_NODES=(vps-4541d883)
 # déplacer le label ne déplace pas les données.
 POSTGRES_NODES=(vps-4541d883)
 
+# --- Mail (Stalwart, dohrm.com) --------------------------------------------
+# Lié à l'IP publique 51.178.19.49 : A de mail.dohrm.com, PTR v4 et MX.
+# Déplacer ce label sans refaire DNS et PTR casse la délivrabilité.
+MAIL_NODES=(vps-a7c3e9b8)
+
 label() {
   local key=$1; shift
   for node in "$@"; do
@@ -72,8 +77,10 @@ echo "role.homelab/platform :"
 label role.homelab/platform "${PLATFORM_NODES[@]}"
 echo "role.homelab/postgres-prod :"
 label role.homelab/postgres-prod "${POSTGRES_NODES[@]}"
+echo "role.homelab/mail :"
+label role.homelab/mail "${MAIL_NODES[@]}"
 
 echo
 echo "Labels role.homelab/* posés :"
 kubectl get nodes \
-  -L role.homelab/mongodb-prod,role.homelab/mongodb-dev,role.homelab/rustfs,role.homelab/monitoring,role.homelab/platform,role.homelab/postgres-prod
+  -L role.homelab/mongodb-prod,role.homelab/mongodb-dev,role.homelab/rustfs,role.homelab/monitoring,role.homelab/platform,role.homelab/postgres-prod,role.homelab/mail

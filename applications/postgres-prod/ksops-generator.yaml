@@ -13,3 +13,4 @@ files:
   - n8n-user.secret.yaml
   - authentik-user.secret.yaml
   - zitadel-user.secret.yaml
+  - stalwart-user.secret.yaml

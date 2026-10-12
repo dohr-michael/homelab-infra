@@ -24,6 +24,7 @@ MongoDB prod : replica set sur les 3 VPS (`role.homelab/mongodb-prod`). PostgreS
 - **ArgoCD** (`argocd/`) : GitOps, `kubectl apply -k argocd/`. Version pinée `v3.3.0`.
 - **ApplicationSet** : auto-découvre `applications/*/` et déploie.
 - **Secrets** : SOPS + age, déchiffrés au deploy par un sidecar KSOPS CMP sur le repo-server.
+- **Mail** : Stalwart sert **dohrm.com** seulement (dohrm.fr reste chez OVH, ne pas toucher son MX). `hostPort` 25/465/587/993 sur `vps-a7c3e9b8`, stockage dans `postgres-prod`. Voir `docs/stalwart-mail.md`.
 - **PostgreSQL** : opérateur CloudNativePG 1.30 (`applications/cnpg-operator/`), cluster `postgres-prod` 1 instance. Une base = CR `Database` + `DatabaseRole` (voir `applications/postgres-prod/20-database.example.yaml`). Backups Barman in-tree → OVH S3.
 
 ## Key Commands
