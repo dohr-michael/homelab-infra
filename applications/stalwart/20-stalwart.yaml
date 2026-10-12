@@ -1,0 +1,163 @@
+##############################################################################
+# Stalwart — serveur mail de dohrm.com (dohrm.fr reste chez OVH).
+#
+# Placement
+#   Épinglé sur le nœud `role.homelab/mail` (vps-a7c3e9b8) : c'est l'IP
+#   51.178.19.49 que portent le A de mail.dohrm.com, son PTR et le MX.
+#   Déplacer le pod = refaire DNS + PTR, pas seulement le label.
+#
+# Ports mail en hostPort
+#   Traefik n'écoute que sur le tailnet, et Caddy (80/443 publics) ne fait que
+#   du HTTP. SMTP/IMAP passent donc en hostPort : le DNAT du plugin CNI
+#   portmap conserve l'IP source, ce dont SPF, DMARC et l'auto-ban ont besoin.
+#   Seuls les ports mail sont exposés : 8080 (WebUI) reste interne et passe
+#   par l'Ingress. Cluster IPv4 seulement : pas d'entrée en IPv6.
+#
+# config.json
+#   Ne contient que le DataStore (PostgreSQL) ; tout le reste vit en base et se
+#   règle par la WebUI ou `stalwart-cli`. L'assistant de bootstrap réécrit
+#   config.json : /etc/stalwart est donc un emptyDir que l'initContainer
+#   réinitialise depuis le ConfigMap à chaque démarrage.
+#
+# TLS Postgres
+#   CNPG exige TLS avec un CA auto-généré, inaccessible depuis ce namespace :
+#   chiffré sans vérification, comme n8n (trafic intra-cluster).
+##############################################################################
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stalwart-config
+  namespace: stalwart
+data:
+  config.json: |
+    {
+      "@type": "PostgreSql",
+      "host": "postgres-prod-rw.postgres-prod.svc.cluster.local",
+      "port": 5432,
+      "database": "stalwart",
+      "authUsername": "stalwart",
+      "authSecret": {
+        "@type": "EnvironmentVariable",
+        "variableName": "STALWART_DB_PASSWORD"
+      },
+      "useTls": true,
+      "allowInvalidCerts": true
+    }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stalwart
+  namespace: stalwart
+  labels:
+    app: stalwart
+spec:
+  replicas: 1
+  # Recreate : les hostPort interdisent deux pods sur le même nœud.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: stalwart
+  template:
+    metadata:
+      labels:
+        app: stalwart
+    spec:
+      priorityClassName: homelab-platform
+      nodeSelector:
+        role.homelab/mail: "true"
+      securityContext:
+        runAsUser: 2000
+        runAsGroup: 2000
+        fsGroup: 2000
+      initContainers:
+        - name: config
+          image: docker.io/stalwartlabs/stalwart:v0.16.26
+          command: ["cp", "/config/config.json", "/etc/stalwart/config.json"]
+          volumeMounts:
+            - name: config-src
+              mountPath: /config
+            - name: etc
+              mountPath: /etc/stalwart
+      containers:
+        - name: stalwart
+          image: docker.io/stalwartlabs/stalwart:v0.16.26
+          imagePullPolicy: IfNotPresent
+          args: ["--config", "/etc/stalwart/config.json"]
+          env:
+            # WebUI et discovery OAuth/JMAP : servis via le VPN uniquement.
+            - name: STALWART_PUBLIC_URL
+              value: https://mail.home.dohrm.fr
+            - name: STALWART_HOSTNAME
+              value: mail.dohrm.com
+          envFrom:
+            - secretRef:
+                name: stalwart-env
+          ports:
+            - name: smtp
+              containerPort: 25
+              hostPort: 25
+            - name: submissions
+              containerPort: 465
+              hostPort: 465
+            - name: submission
+              containerPort: 587
+              hostPort: 587
+            - name: imaps
+              containerPort: 993
+              hostPort: 993
+            - name: http
+              containerPort: 8080
+          # TCP plutôt que /healthz : le port 8080 répond aussi en bootstrap
+          # et en recovery, où les sondes HTTP ne sont pas documentées.
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 15
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 768Mi
+          volumeMounts:
+            - name: etc
+              mountPath: /etc/stalwart
+            - name: data
+              mountPath: /var/lib/stalwart
+      volumes:
+        - name: config-src
+          configMap:
+            name: stalwart-config
+        - name: etc
+          emptyDir: {}
+        # Inutilisé avec un DataStore PostgreSQL ; évite d'écrire dans l'image.
+        - name: data
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stalwart
+  namespace: stalwart
+spec:
+  selector:
+    app: stalwart
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
