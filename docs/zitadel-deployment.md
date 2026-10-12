@@ -1,9 +1,10 @@
-# Zitadel — déploiement préparé
+# Zitadel — fournisseur d'identité
 
 ## Périmètre
 
-Instance pilote sur `https://zitadel.dohrm.fr`, séparée d'Authentik. Aucune
-application Temper, source sociale ou migration de comptes n'est créée ici.
+Fournisseur d'identité unique sur `https://zitadel.dohrm.fr`. Il remplace
+Authentik, décommissionné en octobre 2026 après la migration de `temper-dev`
+(client OIDC et compte bot).
 
 - Chart officiel **10.4.0**, API et Login V2 **v4.19.2**.
 - Namespace `zitadel`, un pod API et un pod Login V2 sur `vps-4541d883`.
@@ -31,8 +32,8 @@ vers `zitadel:8080`. Le Service API configure Traefik en **h2c**. Caddy termine
 le TLS public et doit aussi parler HTTP/2 à Traefik pour la console gRPC.
 
 Le Caddyfile hôte n'est pas versionné ici. Vérifier son transport avant la
-mise en service ; la route HTTP classique d'Authentik ne suffit pas à prouver
-le fonctionnement gRPC. Dans le bloc wildcard public existant, un handler
+mise en service ; une route HTTP classique ne suffit pas à prouver le
+fonctionnement gRPC. Dans le bloc wildcard public existant, un handler
 spécifique peut précéder le handler général :
 
 ```caddyfile
@@ -91,8 +92,8 @@ Ces valeurs sont un budget initial, pas une mesure de consommation Zitadel.
 
 Validations de préparation : intégrité de l'archive du chart, `helm lint`,
 `helm template`, builds Kustomize sans KSOPS, déchiffrement et cohérence des
-secrets. L'initialisation et le parcours de connexion restent à vérifier après
-déploiement. Authentik et les paramètres OIDC de Temper restent inchangés.
+secrets. L'initialisation et le parcours de connexion ont été vérifiés
+après déploiement par la migration de `temper-dev`.
 
 ## Administration par MCP
 
