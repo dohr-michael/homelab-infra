@@ -1,11 +1,12 @@
 ##############################################################################
-# mail.home.dohrm.fr : WebUI d'administration, VPN uniquement (Caddy filtre
-#   sur le tailnet ; nom déclaré dans applications/headscale/10-dns-sync.yaml).
+# mail.dohrm.com, public. Caddy termine le TLS sur 443 (HTTPS : WebUI, JMAP,
+#   OAuth) et transmet aussi le challenge ACME HTTP-01 reçu sur 80 : Stalwart
+#   obtient lui-même le certificat de ses listeners SMTP/IMAP. Bloc Caddy dans
+#   docs/stalwart-mail.md.
 #
-# mail.dohrm.com : seulement le challenge ACME HTTP-01. Caddy occupe le port
-#   80 public et transmet ce chemin à Traefik via un bloc `http://` dédié
-#   (voir docs/stalwart-mail.md) ; Stalwart obtient et renouvelle lui-même le
-#   certificat de ses listeners SMTP/IMAP.
+# Pas de filtre sur /admin : l'administration passe par l'API JMAP (/jmap),
+#   la même que celle des clients. La protection est le compte admin (mot de
+#   passe fort, 2FA) et l'auto-ban, qui voit l'IP réelle via X-Forwarded-For.
 ##############################################################################
 ---
 apiVersion: networking.k8s.io/v1
@@ -17,20 +18,10 @@ metadata:
     traefik.ingress.kubernetes.io/router.entrypoints: web
 spec:
   rules:
-    - host: mail.home.dohrm.fr
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: stalwart
-                port:
-                  number: 8080
     - host: mail.dohrm.com
       http:
         paths:
-          - path: /.well-known/acme-challenge
+          - path: /
             pathType: Prefix
             backend:
               service:
