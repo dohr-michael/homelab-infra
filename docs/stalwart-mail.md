@@ -77,13 +77,18 @@ Pour la rotation automatique (API OVH) :
    (validité illimitée, IP restreinte à `51.178.19.49`), limité aux
    enregistrements de la zone :
    ```
+   GET     /domain/zone/dohrm.com
    GET     /domain/zone/dohrm.com/record
    GET     /domain/zone/dohrm.com/record/*
    POST    /domain/zone/dohrm.com/record
-   PUT     /domain/zone/dohrm.com/record/*
    DELETE  /domain/zone/dohrm.com/record/*
    POST    /domain/zone/dohrm.com/refresh
    ```
+   `GET /domain/zone/dohrm.com` est indispensable : le client OVH de
+   Stalwart (`dns-update`) vérifie la zone avant toute écriture, sinon
+   « Zone dohrm.com not found or not accessible ». Pas de `PUT` : il
+   supprime puis recrée. Les droits d'un token OVH ne se modifient pas :
+   en recréer un.
    Le token de Caddy ne couvre que `dohrm.fr` (vérifié le 2026-10-13 avec
    `GET /auth/currentCredential`) : ne pas l'élargir, une fuite de l'un ne
    doit pas toucher la zone de l'autre. Révocation : console API,
