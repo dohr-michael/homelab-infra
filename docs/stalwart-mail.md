@@ -73,15 +73,31 @@ DNS manuel, garder **DKIM management = Manual** : sinon il signe au bout de
 
 Pour la rotation automatique (API OVH) :
 
-1. Créer un token sur `https://eu.api.ovh.com/createToken/`, limité à la zone :
-   `GET`, `POST`, `PUT`, `DELETE` sur `/domain/zone/dohrm.com/*`, et
-   `POST /domain/zone/dohrm.com/refresh`.
+1. Créer un token dédié sur `https://eu.api.ovh.com/createToken/`
+   (validité illimitée, IP restreinte à `51.178.19.49`), limité aux
+   enregistrements de la zone :
+   ```
+   GET     /domain/zone/dohrm.com/record
+   GET     /domain/zone/dohrm.com/record/*
+   POST    /domain/zone/dohrm.com/record
+   PUT     /domain/zone/dohrm.com/record/*
+   DELETE  /domain/zone/dohrm.com/record/*
+   POST    /domain/zone/dohrm.com/refresh
+   ```
+   Le token de Caddy ne couvre que `dohrm.fr` (vérifié le 2026-10-13 avec
+   `GET /auth/currentCredential`) : ne pas l'élargir, une fuite de l'un ne
+   doit pas toucher la zone de l'autre. Révocation : console API,
+   `DELETE /me/api/credential/{id}`.
 2. Ajouter les secrets au Secret existant (lu en `envFrom`) :
    ```bash
    sops applications/stalwart/stalwart.secret.yaml
    #   STALWART_OVH_APP_SECRET: <application secret>
    #   STALWART_OVH_CONSUMER_KEY: <consumer key>
    ```
+   Saisis directement dans la WebUI, ces secrets finiraient en clair dans la
+   base PostgreSQL, donc dans les sauvegardes Barman. Ici, Stalwart ne stocke
+   que le nom de la variable. `envFrom` n'est lu qu'au démarrage : après le
+   sync ArgoCD, `kubectl -n stalwart rollout restart deploy/stalwart`.
 3. WebUI › Settings › Network › DNS › DNS Providers › New, type **OVH** :
    `applicationKey` en clair, `applicationSecret` et `consumerKey` en
    `EnvironmentVariable` (noms ci-dessus), endpoint `ovh-eu`.
