@@ -105,7 +105,7 @@ Pour la rotation automatique (API OVH) :
    **`publishRecords` = `dkim` uniquement** (sinon il publie aussi CAA,
    `p=reject` et MTA-STS) ; puis **DKIM management = Automatic**.
 
-## Caddy (hôte `vps-a7c3e9b8`, non versionné)
+## Caddy (hôte `vps-a7c3e9b8`, copie dans `infra/caddy/Caddyfile`)
 
 ```caddyfile
 mail.dohrm.com {

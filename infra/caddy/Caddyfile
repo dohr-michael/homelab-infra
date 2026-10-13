@@ -1,0 +1,110 @@
+##############################################################################
+# Caddy — entrée publique du cluster, sur l'hôte vps-a7c3e9b8 (51.178.19.49).
+#
+# COPIE DE RÉFÉRENCE, PAS DÉPLOYÉE AUTOMATIQUEMENT
+#   Le fichier actif est /etc/caddy/Caddyfile sur l'hôte. Toute modification
+#   se fait ici PUIS sur l'hôte (ou l'inverse), dans le même geste. Voir
+#   infra/caddy/README.md.
+#
+# Variables d'environnement (fichier env du service systemd, non versionné) :
+#   OVH_APPLICATION_KEY / _SECRET / OVH_CONSUMER_KEY
+#     token OVH limité à la zone dohrm.fr (records + refresh)
+#   OVH_APPLICATION_KEY_JESS / _SECRET_JESS / OVH_CONSUMER_KEY_JESS
+#     token OVH du compte qui porte tinypaw.fr
+##############################################################################
+{
+    email michael@dohrm.fr
+}
+
+(ovh_auth) {
+    tls {
+        dns ovh {
+            endpoint "ovh-eu"
+            application_key "{$OVH_APPLICATION_KEY}"
+            application_secret "{$OVH_APPLICATION_SECRET}"
+            consumer_key "{$OVH_CONSUMER_KEY}"
+        }
+    }
+}
+
+(ovh_auth_jess) {
+    tls {
+        dns ovh {
+            endpoint "ovh-eu"
+            application_key "{$OVH_APPLICATION_KEY_JESS}"
+            application_secret "{$OVH_APPLICATION_SECRET_JESS}"
+            consumer_key "{$OVH_CONSUMER_KEY_JESS}"
+        }
+    }
+}
+
+# Plan de contrôle VPN
+vpn.dohrm.fr {
+    import ovh_auth
+
+    # CORS pour headscale-ui sur vpn.home.dohrm.fr
+    @cors_preflight method OPTIONS
+    handle @cors_preflight {
+        header Access-Control-Allow-Origin "https://vpn.home.dohrm.fr"
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type"
+        header Access-Control-Max-Age "3600"
+        respond "" 204
+    }
+    header Access-Control-Allow-Origin "https://vpn.home.dohrm.fr"
+    header Access-Control-Allow-Headers "Authorization, Content-Type"
+
+    reverse_proxy localhost:8080
+}
+
+# Site de Jessica (migration tinypaw)
+www.tinypaw.fr, tinypaw.fr {
+    import ovh_auth_jess
+    reverse_proxy localhost:81
+}
+
+# Stalwart (docs/stalwart-mail.md) : HTTPS (WebUI, JMAP, OAuth) terminé ici,
+# le TLS mail (25/465/587/993) reste à Stalwart. Pas d'import ovh_auth : le
+# token ne couvre pas dohrm.com, Caddy émet en TLS-ALPN-01 sur 443.
+mail.dohrm.com {
+    reverse_proxy localhost:81
+}
+
+# Port 80 : challenges ACME HTTP-01 de Stalwart (certificat SMTP/IMAP),
+# le reste redirigé vers HTTPS.
+http://mail.dohrm.com {
+    handle /.well-known/acme-challenge/* {
+        reverse_proxy localhost:81
+    }
+    redir https://{host}{uri} 308
+}
+
+ozzie.home.dohrm.fr {
+    import ovh_auth
+    @private_only {
+        not remote_ip 100.64.0.0/16 127.0.0.1
+    }
+    respond @private_only "access denied" 403
+    reverse_proxy 100.64.0.12:8080
+}
+
+# Services internes : VPN uniquement
+*.home.dohrm.fr {
+    import ovh_auth
+    @private_only {
+        not remote_ip 100.64.0.0/16 127.0.0.1
+    }
+    respond @private_only "access denied" 403
+    reverse_proxy localhost:81
+}
+
+amp.dohrm.fr {
+    import ovh_auth
+    reverse_proxy 100.64.0.10:8080
+}
+
+# Tout le reste de dohrm.fr : public, vers k3s/Traefik
+*.dohrm.fr {
+    import ovh_auth
+    reverse_proxy localhost:81
+}
