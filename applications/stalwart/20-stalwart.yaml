@@ -10,8 +10,9 @@
 #   Traefik n'écoute que sur le tailnet, et Caddy (80/443 publics) ne fait que
 #   du HTTP. SMTP/IMAP passent donc en hostPort : le DNAT du plugin CNI
 #   portmap conserve l'IP source, ce dont SPF, DMARC et l'auto-ban ont besoin.
-#   Seuls les ports mail sont exposés : 8080 (WebUI) reste interne et passe
-#   par l'Ingress. Cluster IPv4 seulement : pas d'entrée en IPv6.
+#   Seuls les ports mail sont exposés : 8080 (WebUI, JMAP) reste interne et
+#   passe par Caddy puis l'Ingress. Cluster IPv4 seulement : pas d'entrée en
+#   IPv6.
 #
 # config.json
 #   Ne contient que le DataStore (PostgreSQL) ; tout le reste vit en base et se
@@ -88,9 +89,11 @@ spec:
           imagePullPolicy: IfNotPresent
           args: ["--config", "/etc/stalwart/config.json"]
           env:
-            # WebUI et discovery OAuth/JMAP : servis via le VPN uniquement.
+            # WebUI, JMAP et discovery OAuth : Caddy termine le TLS public sur
+            # mail.dohrm.com. Les URL OAuth sont liées à ce nom : l'admin web
+            # n'est joignable que par lui.
             - name: STALWART_PUBLIC_URL
-              value: https://mail.home.dohrm.fr
+              value: https://mail.dohrm.com
             - name: STALWART_HOSTNAME
               value: mail.dohrm.com
           envFrom:

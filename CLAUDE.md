@@ -57,6 +57,7 @@ kubectl kustomize argocd/
 - **GPU workloads** (si un pod revient sur GMK) : `nodeSelector: gpu-type: strix-halo` + `toleration: dedicated=ai:NoSchedule`
 - **Deployment strategy** : `Recreate` for GPU pods (shared GPU, no rolling update)
 - **AppProject** : `homelab` — `sourceRepos: ["*"]`
+- **Caddy** : sur l'hôte `vps-a7c3e9b8`, hors cluster. Copie de référence dans `infra/caddy/Caddyfile`, à tenir synchronisée avec `/etc/caddy/Caddyfile`.
 - **Base domain** : `home.dohrm.fr` (Caddy sur `100.64.0.1`, VPN-only via Headscale). DNS tailnet : `applications/headscale/10-dns-sync.yaml`
 - **Public** : `<app>.dohrm.fr` (hors `home.`) → bloc Caddy `*.dohrm.fr` sans filtre IP → Traefik. Un Ingress suffit, external-dns crée le A record (ex. `temper`, `search`)
 

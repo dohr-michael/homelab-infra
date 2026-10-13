@@ -31,7 +31,7 @@ L'Ingress expose `/ui/v2/login` vers `zitadel-login:3000` et les autres routes
 vers `zitadel:8080`. Le Service API configure Traefik en **h2c**. Caddy termine
 le TLS public et doit aussi parler HTTP/2 à Traefik pour la console gRPC.
 
-Le Caddyfile hôte n'est pas versionné ici. Vérifier son transport avant la
+Le Caddyfile hôte a une copie de référence dans `infra/caddy/Caddyfile`. Vérifier son transport avant la
 mise en service ; une route HTTP classique ne suffit pas à prouver le
 fonctionnement gRPC. Dans le bloc wildcard public existant, un handler
 spécifique peut précéder le handler général :
