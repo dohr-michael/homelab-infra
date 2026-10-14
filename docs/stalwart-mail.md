@@ -49,11 +49,19 @@ mail                              IN TXT "v=spf1 a -all"
 _smtp._tls                        IN TXT "v=TLSRPTv1; rua=mailto:postmaster@dohrm.com"
 _imaps._tcp                       IN SRV 0 1 993 mail.dohrm.com.
 _submissions._tcp                 IN SRV 0 1 465 mail.dohrm.com.
+_jmap._tcp                        IN SRV 0 1 443 mail.dohrm.com.   # à publier
 v1-rsa-20261012._domainkey        IN TXT "v=DKIM1; k=rsa; …"
 v1-ed25519-20261012._domainkey    IN TXT "v=DKIM1; k=ed25519; …"
 ```
 
 PTR de `51.178.19.49` et de l'IPv6 du VPS : `mail.dohrm.com.`
+
+`_jmap._tcp` (RFC 8620) : sans lui, un client qui découvre JMAP depuis
+l'adresse (Himalaya v2) ne trouve pas le serveur. Publiable depuis que
+`mail.dohrm.com:443` est servi par Caddy (2026-10-13).
+
+Les clés DKIM sont gérées par Stalwart via l'API OVH depuis le 2026-10-13
+(voir « Rotation DKIM ») : ne plus les modifier à la main.
 
 Enregistrements du zone file Stalwart **volontairement non publiés** :
 
@@ -109,6 +117,15 @@ Pour la rotation automatique (API OVH) :
 4. Domaine `dohrm.com` : **DNS management = Automatic**, ce fournisseur,
    **`publishRecords` = `dkim` uniquement** (sinon il publie aussi CAA,
    `p=reject` et MTA-STS) ; puis **DKIM management = Automatic**.
+5. Relancer la publication : Tasks › New › **DnsManagement**.
+6. **Vérifier les doublons.** À l'activation (2026-10-13), Stalwart a remplacé
+   la clé Ed25519 publiée à la main, mais a **ajouté** une seconde clé RSA à
+   côté de la manuelle (découpage des chaînes différent). Supprimer la
+   manuelle chez OVH : plusieurs TXT DKIM sur un même sélecteur peuvent faire
+   échouer la vérification.
+   ```bash
+   dig +short TXT v1-rsa-20261012._domainkey.dohrm.com @dns101.ovh.net | grep -c DKIM1   # attendu : 1
+   ```
 
 ## Caddy (hôte `vps-a7c3e9b8`, copie dans `infra/caddy/Caddyfile`)
 
@@ -154,15 +171,62 @@ Caddy obtient son propre certificat en TLS-ALPN-01 sur 443.
 8. Listeners : ajouter **`submission`** (SMTP, `[::]:587`, TLS non implicite),
    absent par défaut. Supprimer `https` (443), `pop3s` (995) et `sieve`
    (4190), non exposés.
-9. Listener `http` : faire confiance à `X-Forwarded-For` depuis
-   `10.42.0.0/16` (Traefik, qui conserve celui de Caddy).
-10. Comptes : admin permanent avec 2FA, `postmaster@dohrm.com`.
-11. Retirer `STALWART_RECOVERY_ADMIN` du secret, redémarrer.
+9. **Settings › HTTP Server › Proxy** : activer « Obtain remote IP from
+   Forwarded header » (`useXForwarded`). Ne **pas** renseigner
+   `proxyTrustedNetworks` : il active le Proxy Protocol, que Traefik n'envoie
+   pas en HTTP.
+10. **Settings › Security › Allowed IPs** : `10.42.0.0/16` (réseau des pods).
+   Indispensable, voir l'incident du 2026-10-13.
+11. Comptes : admin permanent avec **2FA** (seule protection de la WebUI
+   contre la force brute, voir l'incident), `postmaster@dohrm.com`.
+12. Retirer `STALWART_RECOVERY_ADMIN` du secret, redémarrer.
 
 Il n'y a **pas de webmail** : `/admin` (console) et `/account` (portail
 utilisateur) seulement. Clients : IMAP 993 + SMTP 587 (STARTTLS) ou 465.
 Depuis la v0.16.22, l'authentification par mot de passe n'est proposée
 qu'après STARTTLS.
+
+## Incident du 2026-10-13 : Traefik banni, 502 pour tous
+
+**Symptôme.** `https://mail.dohrm.com` renvoie 502 quelques heures après
+l'exposition publique. Logs Stalwart :
+`Blocked IP address (security.ip-blocked) listenerId = "http", remoteIp = 10.42.1.24`
+— l'IP du pod Traefik.
+
+**Cause.** Sans `useXForwarded`, Stalwart attribue toutes les requêtes HTTP à
+Traefik. Les robots qui scannent les chemins d'exploit (`*.php*`, `*/wp-*`,
+`*xmlrpc*`…, bannis à la première requête) ont fait bannir Traefik ;
+Stalwart coupe alors chaque connexion et Traefik répond 502.
+
+**Rétablissement.**
+
+1. La WebUI publique est inaccessible et la connexion OAuth repasse par
+   `https://mail.dohrm.com`. Accès direct au listener HTTPS interne de
+   Stalwart (443, certificat Let's Encrypt de `mail.dohrm.com`), depuis le
+   Mac : la connexion vient de `127.0.0.1`, non bannie.
+   ```bash
+   echo "127.0.0.1 mail.dohrm.com" | sudo tee -a /etc/hosts
+   kubectl --kubeconfig="$HOME/.kube/home.dohrm" -n stalwart port-forward deploy/stalwart 443:443
+   ```
+   Pas besoin de `sudo` pour le port 443 sur macOS. Avec `sudo`, écrire
+   `--kubeconfig="$HOME/…"` : zsh ne développe pas `~` dans
+   `sudo KUBECONFIG=~/…`, et kubectl retombe sur `localhost:8080`.
+   Firefox en DNS-over-HTTPS peut ignorer `/etc/hosts`.
+2. Supprimer l'entrée `10.42.x.x` dans Security › Blocked IPs.
+3. **Redémarrer le pod** : la liste des IP bloquées est aussi tenue en
+   mémoire, la suppression en base ne suffit pas.
+4. Retirer la ligne de `/etc/hosts`.
+
+**Point non résolu.** Même avec `useXForwarded` activé, les événements
+`auth.success` du listener HTTP affichent toujours `remoteIp = 10.42.1.24`.
+Soit le log montre l'IP TCP, soit l'en-tête n'est pas pris en compte (non
+tranché : un test avec un faux `X-Forwarded-For` sur `/wp-login.php` a reçu
+un 302 sans déclencher de ban). D'où la liste blanche `10.42.0.0/16` :
+Traefik ne peut plus être banni. Contrepartie : si l'en-tête est ignoré, la
+force brute sur la WebUI n'est pas bannie — la 2FA admin compense.
+SMTP et IMAP ne sont pas concernés : `hostPort` conserve l'IP réelle, et
+l'auto-ban bloque bien les scanners de ports (5 IP publiques dès le premier
+jour, et des tentatives de spam vers des adresses inexistantes).
 
 ## Vérification
 
