@@ -121,7 +121,11 @@ http://mail.dohrm.com {
     handle /.well-known/acme-challenge/* {
         reverse_proxy localhost:81
     }
-    redir https://{host}{uri} 308
+    # `redir` passe avant `handle` dans l'ordre des directives Caddy : hors
+    # d'un handle, il redirigerait aussi les challenges.
+    handle {
+        redir https://{host}{uri} 308
+    }
 }
 ```
 
