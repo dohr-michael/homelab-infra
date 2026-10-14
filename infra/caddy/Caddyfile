@@ -63,6 +63,12 @@ www.tinypaw.fr, tinypaw.fr {
     reverse_proxy localhost:81
 }
 
+# Autoconfiguration des clients mail (Thunderbird) : Traefik ne laisse passer
+# que /mail/config-v1.1.xml vers Stalwart. Certificat en TLS-ALPN-01.
+autoconfig.dohrm.com {
+    reverse_proxy localhost:81
+}
+
 # Stalwart (docs/stalwart-mail.md) : HTTPS (WebUI, JMAP, OAuth) terminé ici,
 # le TLS mail (25/465/587/993) reste à Stalwart. Pas d'import ovh_auth : le
 # token ne couvre pas dohrm.com, Caddy émet en TLS-ALPN-01 sur 443.

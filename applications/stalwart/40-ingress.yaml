@@ -4,6 +4,10 @@
 #   obtient lui-même le certificat de ses listeners SMTP/IMAP. Bloc Caddy dans
 #   docs/stalwart-mail.md.
 #
+# autoconfig.dohrm.com : uniquement le fichier d'autoconfiguration lu par
+#   Thunderbird (et d'autres clients) à la création du compte. Rien d'autre
+#   de Stalwart n'est servi sous ce nom.
+#
 # Pas de filtre sur /admin : l'administration passe par l'API JMAP (/jmap),
 #   la même que celle des clients. La protection est le compte admin (mot de
 #   passe fort, 2FA) et l'auto-ban, qui voit l'IP réelle via X-Forwarded-For.
@@ -23,6 +27,16 @@ spec:
         paths:
           - path: /
             pathType: Prefix
+            backend:
+              service:
+                name: stalwart
+                port:
+                  number: 8080
+    - host: autoconfig.dohrm.com
+      http:
+        paths:
+          - path: /mail/config-v1.1.xml
+            pathType: Exact
             backend:
               service:
                 name: stalwart
