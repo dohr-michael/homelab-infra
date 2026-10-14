@@ -49,7 +49,8 @@ mail                              IN TXT "v=spf1 a -all"
 _smtp._tls                        IN TXT "v=TLSRPTv1; rua=mailto:postmaster@dohrm.com"
 _imaps._tcp                       IN SRV 0 1 993 mail.dohrm.com.
 _submissions._tcp                 IN SRV 0 1 465 mail.dohrm.com.
-_jmap._tcp                        IN SRV 0 1 443 mail.dohrm.com.   # à publier
+_jmap._tcp                        IN SRV 0 1 443 mail.dohrm.com.
+autoconfig                        IN CNAME mail.dohrm.com.
 v1-rsa-20261012._domainkey        IN TXT "v=DKIM1; k=rsa; …"
 v1-ed25519-20261012._domainkey    IN TXT "v=DKIM1; k=ed25519; …"
 ```
@@ -59,6 +60,15 @@ PTR de `51.178.19.49` et de l'IPv6 du VPS : `mail.dohrm.com.`
 `_jmap._tcp` (RFC 8620) : sans lui, un client qui découvre JMAP depuis
 l'adresse (Himalaya v2) ne trouve pas le serveur. Publiable depuis que
 `mail.dohrm.com:443` est servi par Caddy (2026-10-13).
+
+⚠ Dans l'interface OVH, une **cible** (SRV, CNAME, MX) sans point final est
+relative : `mail.dohrm.com` devient `mail.dohrm.com.dohrm.com.`. Toujours
+écrire `mail.dohrm.com.` (constaté sur `_jmap` le 2026-10-14).
+
+`autoconfig` : Thunderbird lit
+`https://autoconfig.dohrm.com/mail/config-v1.1.xml` à la création du compte.
+Stalwart génère ce fichier à partir de ses listeners : supprimer `pop3s`
+(995, non exposé), sinon il est annoncé aux clients.
 
 Les clés DKIM sont gérées par Stalwart via l'API OVH depuis le 2026-10-13
 (voir « Rotation DKIM ») : ne plus les modifier à la main.
@@ -71,7 +81,7 @@ Enregistrements du zone file Stalwart **volontairement non publiés** :
 | CAA avec `accounturi` | Interdirait à Caddy d'émettre pour `*.dohrm.com` |
 | `_validation-persist` | Challenge DNS-PERSIST-01, non utilisé |
 | DMARC `p=reject` | Rester en `p=none` le temps de lire les rapports |
-| MTA-STS, autoconfig, autodiscover | À servir en HTTPS sur `mail.dohrm.com` : possible maintenant, pas encore fait |
+| MTA-STS, autodiscover | À servir en HTTPS (même schéma que `autoconfig`) : pas encore fait |
 
 ## Rotation DKIM
 

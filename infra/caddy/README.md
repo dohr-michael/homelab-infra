@@ -21,7 +21,7 @@ sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
 |---|---|
 | `*.dohrm.fr`, `*.home.dohrm.fr`, `vpn`, `amp`, `ozzie` | DNS-01 via le token OVH `dohrm.fr` (`import ovh_auth`) |
 | `tinypaw.fr` | DNS-01 via le token OVH du compte tinypaw (`import ovh_auth_jess`) |
-| `mail.dohrm.com` | TLS-ALPN-01 sur 443 (le token ne couvre pas `dohrm.com`) |
+| `mail.dohrm.com`, `autoconfig.dohrm.com` | TLS-ALPN-01 sur 443 (le token ne couvre pas `dohrm.com`) |
 
 Le token `ovh_auth` a les droits `GET`/`POST /domain/zone/dohrm.fr/record`,
 `DELETE …/record/*` et `POST …/refresh` (vérifié le 2026-10-13).
