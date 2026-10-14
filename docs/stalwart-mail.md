@@ -67,8 +67,11 @@ relative : `mail.dohrm.com` devient `mail.dohrm.com.dohrm.com.`. Toujours
 
 `autoconfig` : Thunderbird lit
 `https://autoconfig.dohrm.com/mail/config-v1.1.xml` à la création du compte.
-Stalwart génère ce fichier à partir de ses listeners : supprimer `pop3s`
-(995, non exposé), sinon il est annoncé aux clients.
+Il annonce encore POP3 sur 995 après la suppression du listener `pop3s`
+(vérifié le 2026-10-14) : le fichier n'est pas dérivé des listeners.
+Sans effet en pratique, les clients préfèrent IMAP. Thunderbird desktop ne
+gère pas JMAP (seules les apps mobiles l'explorent en 2026) : il passe par
+IMAP/SMTP ; Himalaya v2 trouve JMAP via le SRV `_jmap`.
 
 Les clés DKIM sont gérées par Stalwart via l'API OVH depuis le 2026-10-13
 (voir « Rotation DKIM ») : ne plus les modifier à la main.
