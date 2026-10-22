@@ -19,14 +19,14 @@ spec:
     metadata:
       labels:
         app: litellm
-      annotations:
-        voice-config-revision: "1"
     spec:
       # Pas de taint GPU, pas de CriticalAddonsOnly → VPS a7c3e9b8 ou 4541d883.
       priorityClassName: homelab-platform
       containers:
         - name: litellm
-          image: ghcr.io/berriai/litellm-database:v1.98.0
+          # Pinné par digest : un tag est mutable (cf. compromission 1.107.0,
+          # 2026-10-21). Mettre à jour = changer tag ET digest.
+          image: ghcr.io/berriai/litellm-database:v1.98.0@sha256:5ead13edd4efd89f32dab349c1f19447d395affca53f3aeae00f5e6e01b8c08d
           imagePullPolicy: IfNotPresent
           args:
             - --config

@@ -14,13 +14,6 @@ spec:
     - host: llm-api.home.dohrm.fr
       http:
         paths:
-          - path: /voice
-            pathType: Prefix
-            backend:
-              service:
-                name: voice-pipeline
-                port:
-                  number: 8082
           - path: /
             pathType: Prefix
             backend:

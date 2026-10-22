@@ -5,18 +5,9 @@ namespace: litellm
 
 resources:
   - 00-namespace.yaml
-  - 10-voice-pipeline.yaml
   - 20-config.yaml
   - 30-deployment.yaml
   - 40-ingress.yaml
-
-configMapGenerator:
-  - name: voice-backend
-    files:
-      - voice-pipeline/server.py
-  - name: voice-ui
-    files:
-      - voice-pipeline/ui/index.html
 
 generators:
   - ksops-generator.yaml
