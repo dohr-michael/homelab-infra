@@ -55,13 +55,12 @@ namePrefix: qwen3-5-9b-decision-
 # PARALLEL_SLOTS 1 : déterminisme. n_ctx_slot = 16384 / n_slots si on monte.
 #
 # Budget mesuré sur gmk-ai-master (92,9 Gio, 17,2 disponibles) :
-#   5,3 poids + 2,0 KV + ~1 buffers ≈ 8,5 Gio (Q4_K_M ; 12 Gio en Q8_0).
+#   8,9 poids + 2,0 KV + ~1 buffers ≈ 12 Gio. Passe sans rien libérer.
 #
-# Modèle en place sur gmk-ai-master (Q4_K_M, 5,29 Gio, depuis le 2026-11-03 ;
-# le Q8_0 de 8,87 Gio reste à côté pour revenir en arrière) :
-#   /home/michael/models/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q4_K_M.gguf
+# Modèle en place sur gmk-ai-master (8,87 Gio, vérifié le 2026-09-26) :
+#   /home/michael/models/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q8_0.gguf
 # Pour le retélécharger :
-#   huggingface-cli download unsloth/Qwen3.5-9B-GGUF Qwen3.5-9B-Q4_K_M.gguf \
+#   huggingface-cli download unsloth/Qwen3.5-9B-GGUF Qwen3.5-9B-Q8_0.gguf \
 #     --local-dir /home/michael/models/Qwen3.5-9B-GGUF
 ##############################################################################
 patches:
@@ -103,12 +102,12 @@ patches:
         path: /spec/template/spec/initContainers/0/env
         value:
           - name: MODEL_PATH
-            value: /models/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q4_K_M.gguf
+            value: /models/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q8_0.gguf
       - op: replace
         path: /spec/template/spec/containers/0/env
         value:
           - name: MODEL_PATH
-            value: /models/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q4_K_M.gguf
+            value: /models/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q8_0.gguf
           - name: MODEL_ALIAS
             value: qwen3.5-9b-decision
           - name: CTX_SIZE
