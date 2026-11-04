@@ -1,7 +1,7 @@
 # Stack AI — AMD Strix Halo (ROCm)
 
 LLM, embeddings et transcription sur le nœud `gmk-ai-master` (gfx1151), déployés par ArgoCD.
-Backend **ROCm**, pas Vulkan : image `docker.io/kyuz0/amd-strix-halo-toolboxes:rocm-7.14`.
+Backend **ROCm**, pas Vulkan : image `docker.io/kyuz0/amd-strix-halo-toolboxes:rocm-10.0`, avec `hostIPC: true` (voir `base/llm.yaml`).
 
 ## Ce qui tourne
 
@@ -108,14 +108,15 @@ Paramètres GRUB pour la mémoire GPU — procédure complète dans
 amd_iommu=off amdgpu.gttsize=126976 ttm.pages_limit=32505856
 ```
 
-## Flags llama-server vérifiés (build b10664)
+## Flags llama-server vérifiés (build b11870, image `rocm-10.0`)
 
 Contraintes matérielles :
 
-- `--no-mmap` — **obligatoire**, évite les crashs mmap sur gfx1151
+- `--load-mode none` — **obligatoire**, évite les crashs mmap sur gfx1151 (remplace `--no-mmap`, retiré de llama.cpp)
 - `-fa 1` (flash attention), `-ngl 999` (tous les layers sur GPU)
 - `securityContext: privileged: true, runAsUser: 0` — SELinux bloque les allocations HSA sinon
 - `strategy: Recreate` — le GPU est partagé, pas de rolling update
+- `hostIPC: true` — sans lui, ROCr 10 plante à la création de la première file GPU
 
 Pour tout usage « probabilités » (classification, routage, décision) :
 
@@ -158,7 +159,8 @@ kubectl kustomize applications/ai-stack/overlays/<nom>
 |---|---|
 | Pod en `Init:Error` | GGUF absent de `/home/michael/models/…` — le chemin du patch ne correspond pas au fichier réel |
 | Pod `Pending` sans événement clair | `requests.memory` dépasse ce qui reste d'allouable sur le nœud |
-| Crash au chargement mentionnant mmap | `--no-mmap` manquant |
+| Crash au chargement mentionnant mmap | `--load-mode none` manquant |
+| `GPU Memory Error … Memory in use` au démarrage (ROCm 10) | `hostIPC: true` manquant |
 | Probabilités absurdes ou toutes à 1.0 | `post_sampling_probs: true` dans la requête |
 | Première réponse vide, contenu dans `reasoning_content` | thinking actif — `--reasoning-budget 0` |
 | Déploiement d'une nouvelle app qui échoue | `ksops-generator.yaml` manquant, même sans secret (`files: []`) |

@@ -2,6 +2,16 @@
 # Base llama.cpp ROCm pour Strix Halo.
 # Chaque overlay fournit llm-server-config. Les modèles sont téléchargés et
 # administrés manuellement sur gmk-ai-master, jamais au démarrage des pods.
+#
+# ROCm 10 (`rocm-10.0`, depuis le 2026-11-04 ; `rocm-7.14` n'est plus
+# reconstruit depuis le 2026-08-27) :
+#   hostIPC: true        sans lui, ROCr 10 plante à la création de la première
+#                        file GPU (« GPU Memory Error … Memory in use »),
+#                        reproduit 3/3 sous podman ; l'IPC ou le PID de l'hôte
+#                        suffit. Toolbx partage les deux, d'où l'absence du
+#                        problème dans la doc kyuz0.
+#   --load-mode none     remplace `--no-mmap`, retiré de llama.cpp : même rôle,
+#                        chargement résident, obligatoire sur Strix Halo.
 ##############################################################################
 ---
 apiVersion: apps/v1
@@ -23,6 +33,7 @@ spec:
       labels:
         app: llm-server
     spec:
+      hostIPC: true
       tolerations:
         - key: dedicated
           operator: Equal
@@ -48,7 +59,7 @@ spec:
               readOnly: true
       containers:
         - name: llama-server
-          image: docker.io/kyuz0/amd-strix-halo-toolboxes:rocm-7.14
+          image: docker.io/kyuz0/amd-strix-halo-toolboxes:rocm-10.0
           imagePullPolicy: Always
           command: ["llama-server"]
           args:
@@ -72,7 +83,8 @@ spec:
             - $(CACHE_TYPE_V)
             - --parallel
             - $(PARALLEL_SLOTS)
-            - --no-mmap
+            - --load-mode
+            - none
             - --fit
             - "off"
             - --alias
