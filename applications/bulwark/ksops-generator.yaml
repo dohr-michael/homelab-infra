@@ -1,0 +1,11 @@
+# Aucun secret : SESSION_SECRET est généré au premier démarrage et gardé sur le
+# PVC. Le fichier reste obligatoire (CMP kustomize-sops forcé par l'ApplicationSet).
+apiVersion: viaduct.ai/v1
+kind: ksops
+metadata:
+  name: bulwark-secrets-generator
+  annotations:
+    config.kubernetes.io/function: |
+      exec:
+        path: ksops
+files: []

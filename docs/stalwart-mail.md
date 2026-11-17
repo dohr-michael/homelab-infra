@@ -194,10 +194,74 @@ Caddy obtient son propre certificat en TLS-ALPN-01 sur 443.
    contre la force brute, voir l'incident), `postmaster@dohrm.com`.
 12. Retirer `STALWART_RECOVERY_ADMIN` du secret, redémarrer.
 
-Il n'y a **pas de webmail** : `/admin` (console) et `/account` (portail
-utilisateur) seulement. Clients : IMAP 993 + SMTP 587 (STARTTLS) ou 465.
+Clients : IMAP 993 + SMTP 587 (STARTTLS) ou 465, ou le webmail ci-dessous.
 Depuis la v0.16.22, l'authentification par mot de passe n'est proposée
 qu'après STARTTLS.
+
+## Webmail — Bulwark (décision 2026-10-27)
+
+[Bulwark](https://github.com/bulwarkmail/webmail) 1.18.0 (AGPL-3.0),
+édition **Full** en conteneur : `https://webmail.dohrm.com`
+(`applications/bulwark/`), épinglé sur `vps-a7c3e9b8`, PVC 1 Gi.
+
+| Option écartée | Raison |
+|---|---|
+| Lite servie par Stalwart (`/webmail`, *Application*) | Essayée puis retirée le jour même : Stalwart met le bundle (80 Mo) en cache dans son blob store, donc dans `postgres-prod` → OOMKill de la base partagée. Voir l'incident du 2026-10-27 |
+| Full sous `mail.dohrm.com/webmail` (même origine, pas de CORS) | Le chemin de base est figé au build (`NEXT_PUBLIC_BASE_PATH`) : image à reconstruire à chaque version |
+
+### Côté Stalwart
+
+- **CORS** : le client JMAP tourne dans le navigateur et appelle
+  `mail.dohrm.com` depuis `webmail.dohrm.com`. Settings › Network › HTTP ›
+  Security : `usePermissiveCors` = on. Sans risque ici : l'API s'authentifie
+  par en-tête `Authorization`, pas par cookie, donc un site tiers n'a aucun
+  identifiant ambiant à réutiliser.
+- **IP des vérifications de connexion** : le serveur Bulwark vérifie le mot de
+  passe en appelant `https://mail.dohrm.com` (aucune URL interne possible).
+  Caddy ne fait pas confiance au `X-Forwarded-For` qu'il envoie : Stalwart
+  compte les échecs contre l'IP de sortie du pod. Des fautes de frappe
+  répétées feraient bannir cette IP, et plus personne ne se connecterait au
+  webmail.
+
+### Mise en service
+
+1. DNS OVH : `webmail IN A 51.178.19.49`.
+2. Bloc Caddy `webmail.dohrm.com` (copie dans `infra/caddy/Caddyfile`) sur
+   l'hôte, puis `systemctl reload caddy`.
+3. `usePermissiveCors` sur Stalwart (ci-dessus).
+4. Merge : ArgoCD crée l'app `bulwark`.
+
+### Mise à jour
+
+Changer le tag dans `applications/bulwark/10-bulwark.yaml`. Images signées
+depuis 1.12.0 :
+
+```bash
+gh attestation verify oci://ghcr.io/bulwarkmail/webmail:<version> --owner bulwarkmail
+```
+
+**Stalwart 1.0** (sorti le 2026-10-26) : Bulwark ≥ 1.18.0 requis.
+
+## Incident du 2026-10-27 : `postgres-prod` OOMKill par le bundle Bulwark Lite
+
+**Symptôme.** 05:35 UTC, l'action *Update applications* de Stalwart lance le
+téléchargement de `bulwark-lite-stalwart.zip` (80 Mo). Logs Stalwart :
+`Failed to cache application bundle, it will be downloaded again` (`connection
+closed`, `blob.rs`), puis `Connection refused`. Le conteneur `postgres` est
+`OOMKilled` (limite 1536 Mi, 245 Mi en temps normal). Les quatre bases
+(`stalwart`, `zitadel`, `litellm`, `n8n`) sont coupées environ 30 s ; CNPG
+redémarre l'instance, aucun consommateur ne redémarre.
+
+**Cause.** Stalwart met en cache le zip d'une *Application* dans son blob
+store, ici PostgreSQL, en un seul blob. Le mécanisme exact du pic mémoire n'a
+pas été analysé. L'écriture est retentée à chaque chargement des
+applications (redémarrage, *Update applications*).
+
+**Rétablissement.** *Application* supprimée dans la WebUI : plus de
+nouvelle tentative. Passage à l'édition Full en conteneur.
+
+**À retenir.** Avec un blob store PostgreSQL, ne pas déclarer d'*Application*
+Stalwart lourde. La WebUI admin de Stalwart (petite) passe sans problème.
 
 ## Incident du 2026-10-13 : Traefik banni, 502 pour tous
 

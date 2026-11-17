@@ -76,6 +76,12 @@ mail.dohrm.com {
     reverse_proxy localhost:81
 }
 
+# Webmail Bulwark (applications/bulwark). Même schéma que mail.dohrm.com :
+# certificat en TLS-ALPN-01, A record posé à la main chez OVH.
+webmail.dohrm.com {
+    reverse_proxy localhost:81
+}
+
 # Port 80 : challenges ACME HTTP-01 de Stalwart (certificat SMTP/IMAP),
 # le reste redirigé vers HTTPS.
 http://mail.dohrm.com {

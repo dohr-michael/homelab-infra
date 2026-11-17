@@ -1,0 +1,127 @@
+##############################################################################
+# Bulwark — webmail JMAP de Stalwart (docs/stalwart-mail.md, « Webmail »).
+#
+# Pourquoi pas l'édition Lite servie par Stalwart
+#   Stalwart met le bundle (80 Mo) en cache dans son blob store, donc dans
+#   postgres-prod : OOMKill de toute la base partagée le 2026-10-27. Ici, rien
+#   ne passe par Postgres.
+#
+# Placement
+#   Épinglé sur vps-a7c3e9b8, avec Stalwart et Caddy. Les vérifications de
+#   connexion partent du serveur Bulwark vers https://mail.dohrm.com (pas d'URL
+#   interne possible) : Stalwart attribue les échecs à l'IP de sortie du pod,
+#   qu'il faut connaître et maîtriser (auto-ban). Voir la doc.
+#
+# PVC
+#   Un seul volume sur /app/data : réglages synchronisés (chiffrés), config et
+#   état admin (dont SESSION_SECRET, généré au premier démarrage). Le perdre =
+#   perdre les réglages et les sessions « Remember me », pas les mails.
+##############################################################################
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bulwark-data
+  namespace: bulwark
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path-retain
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bulwark
+  namespace: bulwark
+  labels:
+    app: bulwark
+spec:
+  replicas: 1
+  # Recreate : le PVC est ReadWriteOnce.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: bulwark
+  template:
+    metadata:
+      labels:
+        app: bulwark
+    spec:
+      priorityClassName: homelab-best-effort
+      nodeSelector:
+        role.homelab/mail: "true"
+      securityContext:
+        # L'image tourne en `nextjs` (1001:1001) ; local-path crée le dossier en root.
+        fsGroup: 1001
+      containers:
+        - name: bulwark
+          image: ghcr.io/bulwarkmail/webmail:1.18.0
+          imagePullPolicy: IfNotPresent
+          env:
+            # Fixer le serveur saute l'assistant de configuration.
+            - name: JMAP_SERVER_URL
+              value: https://mail.dohrm.com
+            - name: APP_NAME
+              value: Webmail dohrm.com
+            - name: SETTINGS_SYNC_ENABLED
+              value: "true"
+            # Caddy puis Traefik ajoutent chacun une entrée à X-Forwarded-For.
+            - name: TRUSTED_PROXY_DEPTH
+              value: "2"
+            # Verrouille le choix : pas de bascule possible depuis l'admin.
+            - name: BULWARK_TELEMETRY
+              value: "off"
+          ports:
+            - name: http
+              containerPort: 3000
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 192Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: bulwark-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bulwark
+  namespace: bulwark
+spec:
+  selector:
+    app: bulwark
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http

@@ -1,0 +1,25 @@
+##############################################################################
+# webmail.dohrm.com, public. Hors external-dns (filtré sur dohrm.fr) : A record
+# posé à la main chez OVH. Caddy termine le TLS (TLS-ALPN-01, comme
+# mail.dohrm.com) et transmet à Traefik.
+##############################################################################
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bulwark
+  namespace: bulwark
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: webmail.dohrm.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bulwark
+                port:
+                  number: 3000
