@@ -200,7 +200,7 @@ qu'après STARTTLS.
 
 ## Webmail — Bulwark (décision 2026-10-27)
 
-[Bulwark](https://github.com/bulwarkmail/webmail) 1.18.0 (AGPL-3.0),
+[Bulwark](https://github.com/bulwarkmail/webmail) 1.21.2 (AGPL-3.0),
 édition **Full** en conteneur : `https://webmail.dohrm.com`
 (`applications/bulwark/`), épinglé sur `vps-a7c3e9b8`, PVC 1 Gi.
 
@@ -211,17 +211,21 @@ qu'après STARTTLS.
 
 ### Côté Stalwart
 
-- **CORS** : le client JMAP tourne dans le navigateur et appelle
+- **CORS** : le client JMAP de Bulwark tourne dans le navigateur et appelle
   `mail.dohrm.com` depuis `webmail.dohrm.com`. Settings › Network › HTTP ›
-  Security : `usePermissiveCors` = on. Sans risque ici : l'API s'authentifie
-  par en-tête `Authorization`, pas par cookie, donc un site tiers n'a aucun
-  identifiant ambiant à réutiliser.
+  Security : `usePermissiveCors` = on. Sans, la connexion échoue avec « Le
+  serveur est joignable mais bloque les requêtes cross-origin ». Sans risque
+  ici : l'API s'authentifie par en-tête `Authorization`, pas par cookie, donc
+  un site tiers n'a aucun identifiant ambiant à réutiliser.
 - **IP des vérifications de connexion** : le serveur Bulwark vérifie le mot de
   passe en appelant `https://mail.dohrm.com` (aucune URL interne possible).
-  Caddy ne fait pas confiance au `X-Forwarded-For` qu'il envoie : Stalwart
-  compte les échecs contre l'IP de sortie du pod. Des fautes de frappe
-  répétées feraient bannir cette IP, et plus personne ne se connecterait au
-  webmail.
+  Pod et Caddy sont sur le même nœud : le trafic reste local, sans passer par
+  le `MASQUERADE` de flannel, donc Caddy devrait voir l'IP du pod
+  (`10.42.x`). Celle-ci est dans les Allowed IPs de Stalwart : pas de risque
+  que Stalwart bannisse le webmail. La protection contre la force brute est la
+  limite de tentatives par IP de Bulwark (`TRUSTED_PROXY_DEPTH=2`). Raisonnement
+  non vérifié : Stalwart ne loggue pas les échecs au niveau `info`. Ne pas
+  déplacer le pod sans y repenser.
 
 ### Mise en service
 
@@ -262,6 +266,36 @@ nouvelle tentative. Passage à l'édition Full en conteneur.
 
 **À retenir.** Avec un blob store PostgreSQL, ne pas déclarer d'*Application*
 Stalwart lourde. La WebUI admin de Stalwart (petite) passe sans problème.
+
+## Incident du 2026-10-27, vu le 2026-11-17 : WebUI 2.x sur un serveur 0.16
+
+**Symptôme.** Connexion à `https://mail.dohrm.com` (`/admin`, `/account`)
+impossible : « Sign-in is not configured: the identity provider does not
+support client metadata documents and no OAuth client id is configured for
+this application. »
+
+**Cause.** L'*Application* « Stalwart Web Interface » pointait sur
+`https://github.com/stalwartlabs/webui/releases/latest/download/webui.zip`. La
+WebUI 2.x (pour Stalwart 1.0) est sortie le 2026-10-26 ; l'*Update
+applications* lancée le 27 pour Bulwark Lite re-télécharge **toutes** les
+applications, et a installé la 2.x. Elle se connecte par OAuth avec un
+*client metadata document*, que le serveur 0.16 n'annonce pas.
+
+**Rétablissement.** La WebUI étant hors service, passage par l'API JMAP avec
+`stalwart-cli` **v1.0.14** (dernière version pour 0.16 ; `latest` = v2.0.0,
+pour 1.0, comme le script d'installation et Homebrew) :
+
+```bash
+export STALWART_URL=https://mail.dohrm.com STALWART_USER=admin
+read -rs STALWART_PASSWORD && export STALWART_PASSWORD
+stalwart-cli query application
+stalwart-cli update application <id> \
+  --field resourceUrl='https://github.com/stalwartlabs/webui/releases/download/v1.0.11/webui.zip'
+stalwart-cli create action/updateApps
+```
+
+**À retenir.** Jamais de `releases/latest` dans un `resourceUrl` : épingler la
+WebUI (v1.0.11 = dernière 1.x) et ne passer à la 2.x qu'avec Stalwart 1.0.
 
 ## Incident du 2026-10-13 : Traefik banni, 502 pour tous
 

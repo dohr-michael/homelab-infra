@@ -60,7 +60,7 @@ spec:
         fsGroup: 1001
       containers:
         - name: bulwark
-          image: ghcr.io/bulwarkmail/webmail:1.18.0
+          image: ghcr.io/bulwarkmail/webmail:1.21.2
           imagePullPolicy: IfNotPresent
           env:
             # Fixer le serveur saute l'assistant de configuration.
