@@ -16,14 +16,10 @@ namePrefix: qwen3-5-9b-decision-
 # logprobs du premier token, sur un espace d'étiquettes mono-token, puis
 # renormalise sur les étiquettes autorisées.
 #
-# Statut : solution intermédiaire assumée. La cible reste Open-Jev-9B
-# (ZefanCai) — un LoRA + une tête de décision scalaire + une température
-# apprise sur CE MÊME backbone. Ni la tête ni la température n'entrent dans
-# un GGUF, donc llama.cpp ne peut pas le servir : il lui faut son serveur
-# PyTorch (jev.server / vllm-jev), à valider en ROCm sur gfx1151. Tant que
-# ce n'est pas fait, cet overlay tient le rôle — en sachant qu'il est
-# strictement moins bien calibré, puisqu'il lui manque exactement la tête
-# entraînée et la température qui font la valeur d'Open-Jev.
+# Statut : solution retenue. Open-Jev-9B (LoRA + tête scalaire + température
+# apprise sur ce même backbone, servable seulement en PyTorch/vLLM) a été
+# évalué : Qwen3.5-9B nu fait MIEUX sur nos benchs (constat au 2026-11-19).
+# Aucune raison donc de quitter llama.cpp pour ce service.
 #
 # ⚠⚠ NE JAMAIS charger ici un GGUF estampillé « Jev ». Plusieurs dépôts en
 # proposent ; un GGUF de ce modèle est par construction le backbone décapité

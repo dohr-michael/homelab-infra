@@ -97,7 +97,7 @@ Un module Python expose une API de décision façon OpenRouter `/api/alpha/decis
 
 **En place :** `overlays/qwen3.5-9b-decision` — Qwen3.5-9B Q8_0 servi nu, décision extraite des **logprobs du premier token** sur un espace d'étiquettes mono-token. Le module attaque `/completion` **en direct sur le Service**, pas via LiteLLM : `drop_params: true` y élaguerait `n_probs` et `post_sampling_probs`. La route LiteLLM `qwen-decision` n'existe que pour les appels ad-hoc.
 
-**Cible :** **Open-Jev-9B** (ZefanCai) — LoRA + **tête scalaire** + température apprise sur ce même backbone. Rien de tout ça n'entre dans un GGUF : **llama.cpp ne peut pas le servir**, il lui faut son serveur PyTorch (`jev.server` / `vllm-jev`), à valider en ROCm sur gfx1151. Le service actuel est donc une étape, moins bien calibrée d'exactement ce qui lui manque.
+**Open-Jev-9B écarté :** LoRA + tête scalaire + température apprise sur ce même backbone, servable seulement en PyTorch (`jev.server` / `vllm-jev`). Le Qwen3.5-9B nu fait mieux sur nos benchs : le service reste sur llama.cpp, et vLLM n'a plus de raison d'entrer dans la stack.
 
 ⚠ Ne **jamais** charger un GGUF estampillé « Jev » dans `base/llm.yaml` : c'est le backbone décapité de sa tête. Il se charge sans erreur et renvoie des probabilités fausses, sans laisser de trace dans les logs.
 

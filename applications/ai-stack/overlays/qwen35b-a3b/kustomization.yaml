@@ -14,6 +14,13 @@ namePrefix: qwen35b-a3b-
 # À télécharger une fois sur gmk-ai-master (~858 Mio) :
 #   huggingface-cli download unsloth/Qwen3.6-35B-A3B-GGUF mmproj-F16.gguf \
 #     --local-dir /home/michael/models/Qwen3.6-35B-A3B-GGUF
+#
+# Parallélisme : 4 slots en continuous batching sur un KV UNIFIÉ. Le pool
+# reste de CTX_SIZE tokens au total, partagé entre slots (chacun peut monter
+# à 65k s'il est seul) : même KV qu'à 1 slot, seul l'état récurrent des
+# couches DeltaNet est multiplié par 4 (petit). `--kv-unified` est explicite :
+# llama-server ne l'active par défaut qu'avec `--parallel -1` (auto).
+# Référence à 1 slot (build 11870) : ~50 tok/s en décodage.
 patches:
   - target:
       kind: Deployment
@@ -25,6 +32,9 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/args/-
         value: $(MMPROJ_PATH)
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--kv-unified"
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/cpu
         value: "8"
@@ -61,7 +71,7 @@ patches:
           - name: CTX_SIZE
             value: "65536"
           - name: PARALLEL_SLOTS
-            value: "1"
+            value: "4"
           - name: THREADS
             value: "8"
           - name: CACHE_TYPE_K
