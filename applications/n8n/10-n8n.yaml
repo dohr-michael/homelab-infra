@@ -55,7 +55,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: n8n
-          image: docker.io/n8nio/n8n:2.44.5
+          image: docker.io/n8nio/n8n:2.48.6
           imagePullPolicy: IfNotPresent
           env:
             # ── Base de données ──────────────────────────────────────────
@@ -129,15 +129,18 @@ spec:
               port: http
             periodSeconds: 5
             failureThreshold: 60
+          # /healthz répond 200 même sans base : seul /healthz/readiness vérifie
+          # la connexion Postgres. Sans ça, un redémarrage de postgres-prod laisse
+          # n8n vivant mais muet (Driver not Connected → 502).
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /healthz/readiness
               port: http
             periodSeconds: 15
             timeoutSeconds: 5
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /healthz/readiness
               port: http
             periodSeconds: 30
             timeoutSeconds: 5
