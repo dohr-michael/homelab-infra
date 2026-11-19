@@ -201,13 +201,20 @@ step "4. Ordonnancement systemd : k3s après tailscaled"
 # `--flannel-iface=tailscale0`, un démarrage où tailscaled est plus lent que k3s
 # fait échouer k3s. Ça n'a pas mordu jusqu'ici, mais c'est une fragilité au boot
 # — on ne la reproduit pas sur ce nœud.
+# PartOf= a mordu, lui : le 2026-11-19, un `apt-get upgrade` sur vps-a7c3e9b8 a
+# redémarré tailscaled, flannel.1 a disparu → DNS cluster, ArgoCD et n8n HS.
+# Nœuds existants : poser le même drop-in à la main puis `systemctl daemon-reload`
+# (pas de restart k3s nécessaire).
 run mkdir -p /etc/systemd/system/k3s.service.d
 if [ "$CHECK_ONLY" = 0 ]; then
   cat > /etc/systemd/system/k3s.service.d/10-tailscale.conf <<'EOF'
 # k3s utilise --flannel-iface=tailscale0 : l'interface doit exister avant lui.
+# PartOf : un restart de tailscaled (upgrade apt) supprime flannel.1, que
+# flannel ne recrée jamais → nœud isolé du réseau pods. On redémarre k3s avec.
 [Unit]
 After=tailscaled.service
 Wants=tailscaled.service
+PartOf=tailscaled.service
 EOF
   info "drop-in écrit : /etc/systemd/system/k3s.service.d/10-tailscale.conf"
 fi

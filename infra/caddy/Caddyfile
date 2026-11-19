@@ -11,6 +11,8 @@
 #     token OVH limité à la zone dohrm.fr (records + refresh)
 #   OVH_APPLICATION_KEY_JESS / _SECRET_JESS / OVH_CONSUMER_KEY_JESS
 #     token OVH du compte qui porte tinypaw.fr
+#   OVH_APPLICATION_COM_KEY / _COM_SECRET / OVH_CONSUMER_COM_KEY
+#     token OVH de la zone dohrm.com (snippet ovh_auth_com, pas encore importé)
 ##############################################################################
 {
     email michael@dohrm.fr
@@ -34,6 +36,19 @@
             application_key "{$OVH_APPLICATION_KEY_JESS}"
             application_secret "{$OVH_APPLICATION_SECRET_JESS}"
             consumer_key "{$OVH_CONSUMER_KEY_JESS}"
+        }
+    }
+}
+
+# Token zone dohrm.com. Défini, importé nulle part pour l'instant : les blocs
+# dohrm.com restent en TLS-ALPN-01.
+(ovh_auth_com) {
+    tls {
+        dns ovh {
+            endpoint "ovh-eu"
+            application_key "{$OVH_APPLICATION_COM_KEY}"
+            application_secret "{$OVH_APPLICATION_COM_SECRET}"
+            consumer_key "{$OVH_CONSUMER_COM_KEY}"
         }
     }
 }
@@ -101,7 +116,7 @@ ozzie.home.dohrm.fr {
         not remote_ip 100.64.0.0/16 127.0.0.1
     }
     respond @private_only "access denied" 403
-    reverse_proxy 100.64.0.12:8080
+    reverse_proxy 100.64.0.12:4310
 }
 
 # Services internes : VPN uniquement
